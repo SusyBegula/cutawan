@@ -124,7 +124,13 @@ export function protectLayoutRanges(
 
 /** Manual framing and layout choices always override automatic shot composition. */
 export function automaticLayoutShots(clip: Pick<Clip, 'edit' | 'visualLayout'>): NonNullable<NonNullable<Clip['visualLayout']>['shots']> {
-  if (clip.edit.framing !== 'auto' || clip.edit.reframeMode !== 'crop' || clip.edit.aspect === 'original') return []
+  const letterbox = clip.edit.reframeMode === 'fit-letterbox' || clip.edit.reframeMode === 'fit-blur'
+  if (clip.edit.aspect === 'original' || (!letterbox && (clip.edit.framing !== 'auto' || clip.edit.reframeMode !== 'crop'))) return []
+  if (clip.edit.aspect === '9:16' && validComposition(clip.edit.manualComposition)) {
+    return [{ start: clip.edit.start, end: clip.edit.end, mode: 'fit', composition: clip.edit.manualComposition }]
+  }
+  // Plain letterbox keeps the full source until the user applies source regions.
+  if (letterbox && !(clip.visualLayout?.revision && clip.edit.layoutChosen)) return []
   if (!validLayoutShots(clip.visualLayout, clip.edit.start, clip.edit.end)) {
     return clip.visualLayout?.preserveContext ? [{ start: clip.edit.start, end: clip.edit.end, mode: 'fit',
       review: { status: 'needs-review', reason: 'Layout does not cover this trim; full source retained. Adjust source regions or choose a layout.' } }] : []
@@ -138,7 +144,7 @@ export function automaticLayoutShots(clip: Pick<Clip, 'edit' | 'visualLayout'>):
     let composition = shot.composition
     if (composition && clip.edit.aspect !== '9:16') return { ...shot, composition: undefined }
     const preference = clip.edit.compositionPreference
-    if (composition && isPresenterComposition(composition) && preference && preference !== 'auto' && preference !== composition.preset) {
+    if (composition && !composition.manual && isPresenterComposition(composition) && preference && preference !== 'auto' && preference !== composition.preset) {
       const content = composition.layers.find(l => l.role === 'content')!
       const presenter = composition.layers.find(l => l.role === 'presenter')
       if (presenter) composition = presenterComposition(content.source, presenter.source, preference)
@@ -180,6 +186,8 @@ export function layoutReviewMessage(clip: Pick<Clip, 'edit' | 'visualLayout'>): 
 
 /** Editing at the end handle selects the final visible shot, not a new layout. */
 export function layoutShotAt(clip: Pick<Clip, 'edit' | 'visualLayout'>, time: number): LayoutShot | undefined {
+  if (validComposition(clip.edit.manualComposition)) return {
+    start: clip.edit.start, end: clip.edit.end, mode: 'fit', composition: clip.edit.manualComposition }
   const t = Math.max(clip.edit.start, Math.min(clip.edit.end - 0.000001, time))
   return clip.visualLayout?.shots?.find(shot => t >= shot.start && t < shot.end)
 }

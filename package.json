@@ -1,6 +1,6 @@
 {
   "name": "cutawan",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Open-source AI video clipper — turn long videos into viral short clips (an Opus Clip alternative)",
   "main": "out/main/index.js",
   "author": "Cutawan Contributors",
@@ -78,7 +78,11 @@
       {
         "from": "resources/local-whisper",
         "to": "local-whisper",
-        "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc"]
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
       },
       {
         "from": "build/icon.png",
@@ -95,7 +99,11 @@
       {
         "from": "resources/yt-dlp-plugins",
         "to": "yt-dlp-plugins",
-        "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc"]
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
       }
     ],
     "mac": {

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { Composition } from '@shared/types'
 
 /**
  * Shared playback state between the preview player and the editor sidebar
@@ -8,6 +9,8 @@ import { create } from 'zustand'
  */
 
 interface PreviewBus {
+  layoutDraft: { clipId: string; composition: Composition } | null
+  setLayoutDraft: (draft: { clipId: string; composition: Composition } | null) => void
   /** Current playback position in source-video seconds. */
   time: number
   setTime: (t: number) => void
@@ -31,6 +34,8 @@ interface PreviewBus {
 }
 
 export const usePreviewBus = create<PreviewBus>((set, get) => ({
+  layoutDraft: null,
+  setLayoutDraft: layoutDraft => set({ layoutDraft }),
   time: 0,
   setTime: (t) => set({ time: t }),
   seekHandler: null,

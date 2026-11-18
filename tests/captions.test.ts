@@ -19,6 +19,14 @@ describe('buildAss', () => {
     expect(events.length).toBe(4)
   })
 
+  it('keeps manual caption anchors, including negative coordinates, across automatic layouts', () => {
+    const ass = buildAss(transcript, { ...base, captionPosition: { x: -.1, y: .3 },
+      positionRanges: [{ start: 0, end: 10, positionY: .8 }] })
+    const events = ass.split('\n').filter(line => line.startsWith('Dialogue: 0,'))
+    expect(events.length).toBeGreaterThan(0)
+    expect(events.every(line => line.includes('\\pos(-108,576)'))).toBe(true)
+  })
+
   it('splits a caption event at a layout boundary to keep preview and export positions aligned', () => {
     const ass = buildAss(transcript, { ...base, positionRanges: [{ start: .25, end: .4, positionY: .38 }] })
     const events = ass.split('\n').filter(l => l.startsWith('Dialogue: 0,'))

@@ -11,6 +11,70 @@ const clip = (): Clip => ({ edit: { start: 10, end: 20, aspect: '9:16', reframeM
     shots: [{ start: 10, end: 20, mode: 'fit', composition: presenterComposition(content, presenter),
       review: { status: 'checked', reason: 'Readable samples' } }] } }) as Clip
 
+describe('manual output arrangements and fixed regions', () => {
+  it('clips manual output at negative coordinates without clamping or shrinking its source crop', () => {
+    const c = presenterComposition(content, presenter)!
+    c.manual = true
+    c.layers[0].target = { x: -.2, y: -.1, width: 1.4, height: 1.2 }
+    expect(validComposition(c)).toBe(true)
+    const pixels = compositionPixels(c, { width: 1280, height: 720 }, 1080, 1920)
+    expect(pixels[0].target.x).toBeLessThan(0)
+    expect(pixels[0].target.width).toBeGreaterThan(1080)
+    c.layers[0].source = { ...c.layers[0].source, x: -.1 }
+    expect(validComposition(c)).toBe(false)
+  })
+  it.each(['fit-letterbox', 'fit-blur'] as const)('uses fixed regions with manual framing in %s', mode => {
+    const current = clip()
+    current.edit.reframeMode = mode
+    current.edit.framing = 'manual'
+    expect(automaticLayoutShots(current)).toEqual([])
+    current.edit.manualComposition = presenterComposition(content, presenter)!
+    expect(automaticLayoutShots(current)[0].composition).toEqual(current.edit.manualComposition)
+    current.edit.manualComposition = undefined
+    current.edit.layoutChosen = true
+    current.visualLayout!.revision = 1
+    expect(automaticLayoutShots(current)[0].composition).toEqual(current.visualLayout!.shots![0].composition)
+  })
+  it('allows user panels to overlap within the output frame', () => {
+    const composition = presenterComposition(content, presenter)!
+    composition.manual = true
+    composition.layers[0].target = { x: 0, y: 0, width: 1, height: 1 }
+    expect(validComposition(composition)).toBe(true)
+    composition.layers[1].target.x = 2.1
+    expect(validComposition(composition)).toBe(false)
+  })
+  it('retains fixed crops and targets across scene changes, trim and JSON persistence', () => {
+    const current = clip()
+    const composition = presenterComposition(content, presenter)!
+    composition.manual = true
+    current.edit.manualComposition = composition
+    current.edit.start = 5
+    current.edit.end = 35
+    current.edit.compositionPreference = 'stacked'
+    const restored: Clip = JSON.parse(JSON.stringify(current))
+    expect(automaticLayoutShots(restored)).toEqual([{ start: 5, end: 35, mode: 'fit', composition }])
+    expect(layoutShotAt(restored, 30)?.composition).toEqual(composition)
+    expect(compositionPixels(automaticLayoutShots(restored)[0].composition!, { width: 1920, height: 1080 }, 1080, 1920))
+      .toEqual(compositionPixels(composition, { width: 1920, height: 1080 }, 1080, 1920))
+  })
+  it('keeps the fixed arrangement when asynchronous analysis returns', () => {
+    const current = clip()
+    current.edit.manualComposition = presenterComposition(content, presenter)!
+    const analysed = clip()
+    analysed.edit.framing = 'manual'
+    analysed.edit.reframeMode = 'fit-letterbox'
+    const merged = mergeReframeResult(current, analysed, 'auto', true)
+    expect(merged.edit).toEqual(current.edit)
+    expect(automaticLayoutShots(merged)[0].composition).toEqual(current.edit.manualComposition)
+  })
+  it('leaves a fixed layout inactive in other output aspect ratios', () => {
+    const current = clip()
+    current.edit.manualComposition = presenterComposition(content, presenter)!
+    current.edit.aspect = '16:9'
+    expect(automaticLayoutShots(current).every(shot => !shot.composition)).toBe(true)
+  })
+})
+
 describe('independent presenter/content composition', () => {
   it.each([[.02, .02], [.82, .02], [.02, .72], [.82, .72]])('handles an inset at %s,%s without moving the destination', (x, y) => {
     const result = presenterComposition(content, { ...presenter, x, y })!

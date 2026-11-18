@@ -202,6 +202,7 @@ export default function PreviewPlayer({
   }, [clip, project.transcript, start, end, keptSegments])
 
   const src = window.cutawan.mediaUrl(project.video.path)
+  const layoutDraft = usePreviewBus(state => state.layoutDraft)
   const isCrop = clip.edit.aspect !== 'original' && clip.edit.reframeMode === 'crop'
   const isFitBlur = clip.edit.aspect !== 'original' && clip.edit.reframeMode === 'fit-blur'
 
@@ -211,12 +212,17 @@ export default function PreviewPlayer({
       focusTrack: clip.focusTrack,
       framing: clip.edit.framing,
       manualFocusX: clip.edit.focusX,
-      fitRanges: automaticLayoutShots(clip).filter((shot) => shot.mode === 'fit'),
+      fitRanges: layoutDraft?.clipId === clip.id
+        ? [{ start, end, composition: layoutDraft.composition }]
+        : automaticLayoutShots(clip).filter((shot) => shot.mode === 'fit'),
+      blurBackground: clip.edit.reframeMode === 'fit-blur',
       isCrop
     }
     const t = videoRef.current?.currentTime ?? start
     applyFrame(t)
   }, [
+    layoutDraft,
+    end,
     clip,
     zoomEvents,
     clip.focusTrack,
@@ -310,6 +316,7 @@ export default function PreviewPlayer({
         <div ref={zoomLayerRef} className="absolute inset-0 will-change-transform" onClick={togglePlay}>
           <video
             ref={videoRef}
+            data-preview-source
             src={src}
             poster={clip.thumbnailPath ? window.cutawan.mediaUrl(clip.thumbnailPath) : undefined}
             className="h-full w-full"
@@ -322,7 +329,7 @@ export default function PreviewPlayer({
         </div>
         <canvas ref={overviewRef} aria-hidden="true" className="pointer-events-none absolute left-0 top-0 hidden w-full" />
         <BrollOverlay clip={clip} time={time} />
-        <WatermarkOverlay />
+        <WatermarkOverlay clip={clip} />
         {clip.edit.captionsEnabled && project.transcript && (
           <CaptionOverlay
             transcript={project.transcript}
@@ -378,7 +385,7 @@ export default function PreviewPlayer({
 }
 
 /** Mirrors the export's branding watermark (same corner, size and opacity). */
-function WatermarkOverlay(): React.JSX.Element | null {
+function WatermarkOverlay({ clip }: { clip: Clip }): React.JSX.Element | null {
   const branding = useStore((s) => s.settings?.branding)
   if (!branding?.enabled || !branding.imagePath) return null
   const margin = '3cqw'
@@ -394,9 +401,9 @@ function WatermarkOverlay(): React.JSX.Element | null {
       alt=""
       className="pointer-events-none absolute"
       style={{
-        width: `${Math.min(0.5, Math.max(0.04, branding.scale)) * 100}cqw`,
+        width: `${(clip.edit.watermarkTransform?.scale ?? Math.min(0.5, Math.max(0.04, branding.scale))) * 100}cqw`,
         opacity: Math.min(1, Math.max(0.05, branding.opacity)),
-        ...corner[branding.position]
+        ...(clip.edit.watermarkTransform ? { left: `${clip.edit.watermarkTransform.x * 100}cqw`, top: `${clip.edit.watermarkTransform.y * 100}cqh` } : corner[branding.position])
       }}
     />
   )
@@ -514,8 +521,8 @@ function CaptionOverlay({
   let index = 0
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 flex flex-col items-center text-center"
-      style={{ top: `${captionPositionAt(detailCaptionRanges(clip), time, style.positionY) * 100}cqh`, transform: 'translateY(-50%)' }}
+      className="pointer-events-none absolute flex flex-col items-center text-center"
+      style={{ width: '100cqw', left: `${(clip.edit.captionPosition?.x ?? .5) * 100}cqw`, top: `${(clip.edit.captionPosition?.y ?? captionPositionAt(detailCaptionRanges(clip), time, style.positionY)) * 100}cqh`, transform: 'translate(-50%, -50%)' }}
     >
       {group.lines.map((line, li) => (
         <div

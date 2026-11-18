@@ -147,6 +147,7 @@ export interface CaptionOptions {
   brandColors?: BrandColors | null
   /** Source-time layout bands that keep captions clear of enlarged detail. */
   positionRanges?: CaptionPositionRange[]
+  captionPosition?: { x: number; y: number }
 }
 
 export function buildAss(transcript: Transcript, opts: CaptionOptions): string {
@@ -156,7 +157,7 @@ export function buildAss(transcript: Transcript, opts: CaptionOptions): string {
   // the style's anchor line exactly as the preview centres it (translateY -50%).
   // A bottom-aligned style with MarginV would grow upwards from that line and
   // sit half a block higher than the preview on every two-line caption.
-  const captionX = Math.round(opts.width / 2)
+  const captionX = Math.round(opts.width * (opts.captionPosition?.x ?? .5))
   const marginH = Math.round(opts.width * (1 - CAPTION_SAFE_WIDTH) / 2)
   const primary = assStyleColor(style.textColor)
   const outline = assStyleColor(style.outlineColor)
@@ -229,7 +230,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         .filter(t => t > start && t < end)), end].sort((a, b) => a - b)
       for (let part = 0; part < cuts.length - 1; part++) {
         const from = cuts[part], until = cuts[part + 1]
-        const position = captionPositionAt(opts.positionRanges, opts.clipStart + (from + until) / 2, style.positionY)
+        const position = opts.captionPosition?.y ?? captionPositionAt(opts.positionRanges, opts.clipStart + (from + until) / 2, style.positionY)
         const anchor = `{\\an5\\q2\\pos(${captionX},${Math.round(position * opts.height)})}`
         lines.push(`Dialogue: 0,${assTime(from)},${assTime(until)},Caption,,0,0,0,,${anchor}${renderGroupText(group, i, style)}`)
       }

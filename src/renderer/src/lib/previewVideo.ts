@@ -11,7 +11,7 @@ export function applyPreviewVideoFrame(
   t: number,
   overview?: HTMLCanvasElement | null
 ): void {
-  const composition = plan.isCrop ? plan.fitRanges?.find(r => t >= r.start && t < r.end)?.composition : undefined
+  const composition = plan.fitRanges?.find(r => t >= r.start && t < r.end)?.composition
   video.style.visibility = 'visible'
   if (composition && overview && video.readyState >= 2 && video.videoWidth > 0 && video.clientWidth > 0) {
     const context = overview.getContext('2d')
@@ -29,6 +29,13 @@ export function applyPreviewVideoFrame(
         context.setTransform(width / 1080, 0, 0, height / 1920, 0, 0)
         context.fillStyle = '#000'
         context.fillRect(0, 0, 1080, 1920)
+        if (plan.blurBackground) {
+          const scale = Math.max(1080 / video.videoWidth, 1920 / video.videoHeight)
+          const w = video.videoWidth * scale, h = video.videoHeight * scale
+          context.filter = 'blur(24px) brightness(0.88)'
+          context.drawImage(video, (1080 - w) / 2, (1920 - h) / 2, w, h)
+          context.filter = 'none'
+        }
         for (const { source: s, target: d } of pixels) {
           context.drawImage(video, s.x, s.y, s.width, s.height, d.x, d.y, d.width, d.height)
         }

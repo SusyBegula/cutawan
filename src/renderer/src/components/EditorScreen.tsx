@@ -24,6 +24,7 @@ import { automaticLayoutShots, validLayoutShots } from '@shared/contentType'
 import { useStore } from '../store'
 import PreviewPlayer from './PreviewPlayer'
 import CompositionControls from './CompositionControls'
+import OverlayControls from './OverlayControls'
 import TimelineEditor from './TimelineEditor'
 import { cutRange, keepsPlayback } from '@shared/editOps'
 import { trackClip } from '@shared/editHistory'
@@ -238,6 +239,7 @@ export default function EditorScreen(): React.JSX.Element {
             ))}
           </div>
           <CompositionControls clip={clip} />
+          <OverlayControls key={clip.id} clip={clip} />
           {!cropDisabled && (
             <>
               <div className="mt-3 grid grid-cols-3 gap-1.5">

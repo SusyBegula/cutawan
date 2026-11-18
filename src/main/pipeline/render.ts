@@ -254,7 +254,7 @@ function reframeGraph(
 
   const fitShots = automaticLayoutShots(clip).filter((shot) => shot.mode === 'fit')
   if (fitShots.length) {
-    const plain = { ...clip, visualLayout: undefined }
+    const plain = { ...clip, edit: { ...clip.edit, manualComposition: undefined }, visualLayout: undefined }
     const cropped = reframeGraph(plain, source, 'layoutCropInput', focus, focusCommandsPath)
       .replace('[reframed]', '[layoutCrop]')
     const groups = new Map<string, typeof fitShots>()
@@ -270,7 +270,7 @@ function reframeGraph(
       // made overlay buffer the main stream through each gap, ~1.5 GB for a
       // minute of 1080x1920, and was slower once the canvas fill was cheap.
       parts.push(shots[0].composition
-        ? compositionGraph(`layoutFitInput${i}`, `layoutFit${i}`, `layout${i}`, source, w, h, shots[0].composition)
+        ? compositionGraph(`layoutFitInput${i}`, `layoutFit${i}`, `layout${i}`, source, w, h, shots[0].composition, clip.edit.reframeMode === 'fit-blur')
         : fitRegionGraph(`layoutFitInput${i}`, `layoutFit${i}`, `layout${i}`, source, w, h, region, shots[0].overview))
       const enabled = shots.map((shot) =>
         `gte(t,${Math.max(0, shot.start - clip.edit.start).toFixed(3)})*lt(t,${(shot.end - clip.edit.start).toFixed(3)})`).join('+')
@@ -540,14 +540,15 @@ export function buildFilterGraph(
   if (branding?.enabled && branding.imagePath) {
     const input = items.length + 1
     extraInputs.push('-loop', '1', '-t', clipDuration.toFixed(3), '-i', branding.imagePath)
-    const wmWidth = Math.max(2, Math.round(w * Math.min(0.5, Math.max(0.04, branding.scale))))
+    const transform = clip.edit.watermarkTransform
+    const wmWidth = Math.max(2, Math.round(w * (transform?.scale ?? Math.min(0.5, Math.max(0.04, branding.scale)))))
     const opacity = Math.min(1, Math.max(0.05, branding.opacity))
     const margin = Math.round(w * WATERMARK_MARGIN)
     parts.push(
       `[${input}:v]format=rgba,scale=${wmWidth}:-1:flags=lanczos,colorchannelmixer=aa=${opacity.toFixed(3)}[wm]`
     )
     parts.push(
-      `[${current}][wm]overlay=${watermarkOverlayXY(branding.position, margin)}[wmk]`
+      `[${current}][wm]overlay=${transform ? `${Math.round(w * transform.x)}:${Math.round(h * transform.y)}` : watermarkOverlayXY(branding.position, margin)}[wmk]`
     )
     current = 'wmk'
   }
@@ -693,7 +694,8 @@ async function render(job: RenderJob): Promise<RenderResult> {
       title: clip.edit.showTitle && !compositionHidesTitle(effectiveClip) ? clip.hook || clip.title : undefined,
       fontFamily: clip.edit.captionFontFamily ?? undefined,
       brandColors: job.branding?.colors,
-      positionRanges: detailCaptionRanges(effectiveClip)
+      positionRanges: detailCaptionRanges(effectiveClip),
+      captionPosition: effectiveClip.edit.captionPosition
     })
     const dir = join(tmpdir(), 'cutawan')
     await mkdir(dir, { recursive: true })

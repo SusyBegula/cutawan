@@ -112,6 +112,11 @@ export interface ClipEditState {
   framing: FramingMode
   /** A user choice; automatic analysis must not overwrite it. */
   compositionPreference?: 'auto' | 'content-first' | 'stacked' | 'content-only'
+  /** Fixed source crops and output arrangement for the entire clip. */
+  manualComposition?: Composition
+  /** Output centre anchor for captions and top-left anchor for the watermark. */
+  captionPosition?: { x: number; y: number }
+  watermarkTransform?: { x: number; y: number; scale: number }
   /** False turns detected two-person split-screen ranges back into speaker crops. */
   speakerSplit?: boolean
   /** Source ranges the user cut out (always removed, ripple-closed). */
@@ -228,6 +233,8 @@ export interface ContentRegion { x: number; y: number; width: number; height: nu
 /** Independent crops of one source frame, rendered on one playback clock. */
 export interface Composition {
   version: 1
+  /** User-positioned panels may overlap and use the full output frame. */
+  manual?: boolean
   /** `speakers`: two people from one wide shot, stacked, during a quick exchange. */
   preset: 'content-first' | 'stacked' | 'content-only' | 'speakers'
   layers: Array<{ role: 'content' | 'presenter' | 'speaker'; source: ContentRegion; target: ContentRegion }>

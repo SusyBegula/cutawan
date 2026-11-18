@@ -7,6 +7,12 @@ export function validRectangle(r: ContentRegion | undefined): r is ContentRegion
     r.x + r.width <= 1.000001 && r.y + r.height <= 1.000001)
 }
 
+function validOutputRectangle(r: ContentRegion): boolean {
+  return Boolean(r && [r.x, r.y, r.width, r.height].every(Number.isFinite) &&
+    r.x >= -1 && r.x <= 2 && r.y >= -1 && r.y <= 2 &&
+    r.width >= .02 && r.width <= 2 && r.height >= .02 && r.height <= 2)
+}
+
 function intersection(a: ContentRegion, b: ContentRegion): number {
   return Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) *
     Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y))
@@ -20,11 +26,11 @@ export function validComposition(c: Composition | undefined): c is Composition {
   const roles = new Set<string>()
   for (const layer of c.layers) {
     if (!layer || !['content', 'presenter'].includes(layer.role) || roles.has(layer.role) ||
-      !validRectangle(layer.source) || !validRectangle(layer.target) ||
-      layer.target.y + layer.target.height > c.captionY - .07) return false
+      !validRectangle(layer.source) || !(c.manual ? validOutputRectangle(layer.target) : validRectangle(layer.target)) ||
+      (!c.manual && layer.target.y + layer.target.height > c.captionY - .07)) return false
     roles.add(layer.role)
   }
-  return roles.has('content') && (c.layers.length === 1 || intersection(c.layers[0].target, c.layers[1].target) < .000001)
+  return roles.has('content') && (c.manual === true || c.layers.length === 1 || intersection(c.layers[0].target, c.layers[1].target) < .000001)
 }
 
 /** Two stacked speaker panels, captions on the seam between them. */
@@ -76,7 +82,12 @@ export function compositionPixels(c: Composition, source: { width: number; heigh
   if (!validComposition(c) || Math.min(source.width, source.height, width, height) < 2) return []
   return c.layers.map(layer => {
     const crop = contentRegionPixels(layer.source, source.width, source.height)
-    const panel = contentRegionPixels(layer.target, width, height)
+    const panel = c.manual ? {
+      x: Math.floor(layer.target.x * width / 2) * 2,
+      y: Math.floor(layer.target.y * height / 2) * 2,
+      width: Math.max(2, Math.floor(layer.target.width * width / 2) * 2),
+      height: Math.max(2, Math.floor(layer.target.height * height / 2) * 2)
+    } : contentRegionPixels(layer.target, width, height)
     const scale = Math.min(panel.width / crop.width, panel.height / crop.height)
     const w = Math.max(2, Math.floor(crop.width * scale / 2) * 2)
     const h = Math.max(2, Math.floor(crop.height * scale / 2) * 2)

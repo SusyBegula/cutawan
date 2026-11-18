@@ -31,6 +31,7 @@ export interface PreviewFramePlan {
   framing: Clip['edit']['framing']
   manualFocusX: number
   isCrop: boolean
+  blurBackground?: boolean
   fitRanges?: Array<Omit<LayoutShot, 'mode'>>
 }
 

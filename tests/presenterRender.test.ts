@@ -49,6 +49,20 @@ it('exports original crops from all corners, switches at the right time, and kee
       const streams = JSON.parse(await runBinary(FFPROBE_PATH, ['-v', 'error', '-show_entries', 'stream=codec_type', '-of', 'json', outputPath]))
       expect(streams.streams.filter((s: { codec_type: string }) => s.codec_type === 'audio')).toHaveLength(1)
       if (i === 0) {
+        const locked: Clip = { ...clip, edit: { ...clip.edit, reframeMode: 'fit-letterbox', framing: 'manual', manualComposition: composition } }
+        const letterboxPath = join(dir, 'locked-letterbox.mp4')
+        await renderClip({ clip: locked, source, transcript: null, outputPath: letterboxPath, encoder: 'cpu', quality: 'draft' })
+        await runFfmpeg(['-ss', '0.2', '-i', letterboxPath, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', rawPath])
+        const letterboxFrame = await readFile(rawPath)
+        expect(letterboxFrame[at]).toBeGreaterThan(200)
+        expect(letterboxFrame[at + 1]).toBeLessThan(30)
+        locked.edit.reframeMode = 'fit-blur'
+        const blurPath = join(dir, 'locked-blur.mp4')
+        await renderClip({ clip: locked, source, transcript: null, outputPath: blurPath, encoder: 'cpu', quality: 'draft' })
+        await runFfmpeg(['-ss', '0.2', '-i', blurPath, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', rawPath])
+        const blurredFrame = await readFile(rawPath)
+        expect(blurredFrame[at]).toBeGreaterThan(200)
+        expect(blurredFrame[at + 1]).toBeLessThan(30)
         const capped = await renderClip({ clip, source, transcript: null, outputPath: join(dir, 'capped.mp4'), sizeTargetBytes: 20000 })
         expect(capped.sizePlan?.downscaled).toBe(true)
         const cappedInfo = await probeVideo(capped.outputPath)

@@ -1,10 +1,28 @@
 # Changelog
 
 Notable changes per release. Full commit history and downloadable builds are on
-the [releases page](https://github.com/JeremySNR/cutawan/releases).
+the [releases page](https://github.com/SusyBegula/cutawan/releases).
 
 This project uses [semantic versioning](https://semver.org/), loosely: while
 still pre-1.0, minor bumps carry new features and patch bumps carry fixes.
+
+## [Unreleased]
+
+## [0.16.0] - 2026-11-19
+
+### Fixed
+
+- The layout editor shows actual fitted video crops matching the player, previews draft changes live, and supports resizing panels using all four corner handles.
+- Fit + blur supports source-region selection, manual arrangement and whole-clip locks, retaining a blurred source background in preview and export.
+- Fit (letterbox) now supports selecting and manually arranging presenter/content regions, including whole-clip locks, in preview and export.
+- Applying fixed presenter regions no longer triggers a render loop that blanks the editor.
+
+### Added
+
+- Move captions and watermark images using a placement canvas and percentage controls, resize watermarks with a corner handle, and save per-clip positions across all framing modes. Manual output panels and overlays can extend beyond the frame with negative coordinates.
+- Arrange presenter and content panels manually with draggable output panels and size controls. Lock source regions and the arrangement across the whole clip, including after saving and reopening.
+- Draw presenter and content regions directly on the original video instead of entering coordinates. Review the selection before applying it to the clip.
+- Highlight the presenter region on the original video while adjusting source coordinates. The highlighted source preview follows the playhead and updates before applying changes.
 
 ## [0.15.0] - 2026-11-18
 

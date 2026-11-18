@@ -128,6 +128,88 @@ async function runSmokeCapture(win: BrowserWindow, dir: string): Promise<void> {
   await click('[data-testid="clip-thumb"]')
   await sleep(800)
   await shot('editor')
+  if (process.env.CUTAWAN_SMOKE_REGIONS) {
+    const clickText = async (text: string): Promise<void> => {
+      const clicked = await win.webContents.executeJavaScript(`(() => {
+        const element = [...document.querySelectorAll('button, summary')].find(e => e.textContent.trim() === ${JSON.stringify(text)})
+        if (!element) return false
+        element.click()
+        return true
+      })()`)
+      if (!clicked) throw new Error(`Region smoke: missing ${text}`)
+      await sleep(600)
+    }
+    if (process.env.CUTAWAN_SMOKE_LETTERBOX) await clickText('Fit (letterbox)')
+    await clickText('Set presenter and content regions')
+    await win.webContents.executeJavaScript(`(() => {
+      const label = [...document.querySelectorAll('label')].find(e => e.textContent.includes('Keep these source regions fixed'))
+      if (!label) throw new Error('Missing fixed-region checkbox')
+      label.querySelector('input').click()
+    })()`)
+    await clickText('Apply regions')
+    await clickText('Arrange presenter and content manually')
+    const resizePoint = await win.webContents.executeJavaScript(`(() => {
+      const handle = document.querySelector('[data-testid="resize-content-se"]')
+      handle.scrollIntoView({ block: 'center' })
+      const bounds = handle.getBoundingClientRect()
+      const input = handle.closest('details').querySelectorAll('input[type="number"]')[2]
+      return { x: Math.round(bounds.x + bounds.width / 2), y: Math.round(bounds.y + bounds.height / 2), width: Number(input.value) }
+    })()`)
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: resizePoint.x, y: resizePoint.y })
+    win.webContents.sendInputEvent({ type: 'mouseDown', x: resizePoint.x, y: resizePoint.y, button: 'left', clickCount: 1 })
+    await sleep(80)
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: resizePoint.x + 4, y: resizePoint.y + 4 })
+    win.webContents.sendInputEvent({ type: 'mouseUp', x: resizePoint.x + 4, y: resizePoint.y + 4, button: 'left', clickCount: 1 })
+    await sleep(400)
+    const resized = await win.webContents.executeJavaScript(`Number(document.querySelector('[data-testid="resize-content-se"]').closest('details').querySelectorAll('input[type="number"]')[2].value)`)
+    if (resized === resizePoint.width) throw new Error('Corner resizing did not change panel width')
+    await shot('editor-corner-resize')
+    await clickText('Apply manual arrangement')
+    const healthy = await win.webContents.executeJavaScript(`document.body.innerText.includes('Unlock whole-clip regions') && document.body.innerText.includes('All clips')`)
+    if (!healthy) throw new Error('Applying regions blanked the editor')
+    if (process.env.CUTAWAN_SMOKE_LETTERBOX && !await win.webContents.executeJavaScript(`
+      [...document.querySelectorAll('button')].find(e => e.textContent.trim() === 'Fit (letterbox)').className.includes('border-white/30')
+    `)) throw new Error('Applying regions changed letterbox mode')
+    await shot('editor-fixed-regions')
+    await clickText('Move captions and watermark')
+    const captionPoint = await win.webContents.executeJavaScript(`(() => {
+      const label = document.querySelector('[aria-label="Drag captions"]')
+      label.scrollIntoView({ block: 'center' })
+      const r = label.getBoundingClientRect()
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), value: Number(document.querySelector('[aria-label="Caption x %"]').value) }
+    })()`)
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: captionPoint.x, y: captionPoint.y })
+    win.webContents.sendInputEvent({ type: 'mouseDown', x: captionPoint.x, y: captionPoint.y, button: 'left', clickCount: 1 })
+    await sleep(80)
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: captionPoint.x - 20, y: captionPoint.y - 20 })
+    win.webContents.sendInputEvent({ type: 'mouseUp', x: captionPoint.x - 20, y: captionPoint.y - 20, button: 'left', clickCount: 1 })
+    await sleep(400)
+    const movedCaption = await win.webContents.executeJavaScript(`Number(document.querySelector('[aria-label="Caption x %"]').value)`)
+    if (movedCaption >= captionPoint.value) throw new Error('Caption drag did not move the caption anchor')
+    const watermarkPoint = await win.webContents.executeJavaScript(`(() => {
+      const handle = document.querySelector('[aria-label="Resize watermark"]')
+      if (!handle) return null
+      handle.scrollIntoView({ block: 'center' })
+      const r = handle.getBoundingClientRect()
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), width: Number(document.querySelector('[aria-label="Watermark width %"]').value) }
+    })()`)
+    if (watermarkPoint) {
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: watermarkPoint.x, y: watermarkPoint.y })
+      win.webContents.sendInputEvent({ type: 'mouseDown', x: watermarkPoint.x, y: watermarkPoint.y, button: 'left', clickCount: 1 })
+      await sleep(80)
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: watermarkPoint.x + 12, y: watermarkPoint.y + 12 })
+      win.webContents.sendInputEvent({ type: 'mouseUp', x: watermarkPoint.x + 12, y: watermarkPoint.y + 12, button: 'left', clickCount: 1 })
+      await sleep(400)
+      const watermarkWidth = await win.webContents.executeJavaScript(`Number(document.querySelector('[aria-label="Watermark width %"]').value)`)
+      if (watermarkWidth <= watermarkPoint.width) throw new Error('Watermark corner did not resize its image')
+      console.log('PASS watermark corner resizing in Fit mode')
+    }
+    await shot('editor-overlay-placement')
+    console.log('PASS caption dragging with live placement controls')
+    console.log('PASS corner resizing, fixed source regions and manual arrangement without blanking the editor')
+    app.quit()
+    return
+  }
   // Timeline editing with real key events: two razor splits, select the
   // middle piece, ripple-delete it, then undo.
   const key = async (keyCode: string, modifiers: Array<'meta' | 'control'> = []): Promise<void> => {

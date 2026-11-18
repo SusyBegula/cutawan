@@ -5,14 +5,16 @@ import { compositionPixels } from '@shared/composition'
 /** One decoded stream, bounded branches, identical fit geometry to the preview. */
 export function compositionGraph(
   input: string, output: string, prefix: string, source: { width: number; height: number },
-  width: number, height: number, composition: Composition
+  width: number, height: number, composition: Composition, blurBackground = false
 ): string {
   const layers = compositionPixels(composition, source, width, height)
   if (!layers.length) throw new Error('Invalid composition')
   const parts = [`[${input}]split=${layers.length + 1}[${prefix}BaseInput]${layers.map((_, i) => `[${prefix}Input${i}]`).join('')}`,
     // Blacken the 2x2 seed before padding: a full-frame drawbox fill costs a
     // per-pixel blend of every output frame (~0.4 s per second of 1080x1920).
-    `[${prefix}BaseInput]scale=2:2,drawbox=color=black:t=fill,pad=${width}:${height}:0:0:color=black[${prefix}Base]`]
+    blurBackground
+      ? `[${prefix}BaseInput]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},gblur=sigma=24,eq=brightness=-0.12[${prefix}Base]`
+      : `[${prefix}BaseInput]scale=2:2,drawbox=color=black:t=fill,pad=${width}:${height}:0:0:color=black[${prefix}Base]`]
   for (const [i, { source: s, target: d }] of layers.entries()) {
     parts.push(`[${prefix}Input${i}]crop=${s.width}:${s.height}:${s.x}:${s.y},scale=${d.width}:${d.height}:flags=lanczos,setsar=1[${prefix}Layer${i}]`)
     parts.push(`[${i === 0 ? `${prefix}Base` : `${prefix}Out${i - 1}`}][${prefix}Layer${i}]overlay=${d.x}:${d.y}:eof_action=pass[${i === layers.length - 1 ? output : `${prefix}Out${i}`}]`)

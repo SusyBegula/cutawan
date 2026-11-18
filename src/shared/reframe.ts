@@ -121,6 +121,7 @@ export function mergeReframeResult(current: Clip, analysed: Clip, videoType: Vid
     reframeStatus: analysed.reframeStatus ?? 'done'
   }
   if (needsReframe(merged)) merged.reframeStatus = 'pending'
+  if (current.edit.manualComposition) return merged
   const retryAutomatic = retryLayout && !current.edit.layoutChosen && !current.visualLayout?.revision
   if (!layoutUntouched(current.edit, videoType) && !needsLayoutUpgrade(current) && !retryAutomatic) return merged
   return {
