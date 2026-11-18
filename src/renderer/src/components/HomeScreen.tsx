@@ -80,6 +80,7 @@ function ImportHero(): React.JSX.Element {
   const [url, setUrl] = useState('')
 
   const importing = importProgress !== null
+  const importFraction = importProgress?.phaseProgress ?? importProgress?.progress ?? -1
   const disabled = busy || importing
   const canSubmitUrl = /^https?:\/\/\S+$/.test(url.trim()) && !disabled
 
@@ -167,11 +168,11 @@ function ImportHero(): React.JSX.Element {
             <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-surface-700">
               <div
                 className={`h-full rounded-full bg-zinc-200 transition-all ${
-                  importProgress.progress < 0 ? 'w-1/4 animate-pulse' : ''
+                  importFraction < 0 ? 'w-1/4 animate-pulse' : ''
                 }`}
                 style={
-                  importProgress.progress >= 0
-                    ? { width: `${Math.round(importProgress.progress * 100)}%` }
+                  importFraction >= 0
+                    ? { width: `${Math.round(importFraction * 100)}%` }
                     : undefined
                 }
               />
@@ -201,6 +202,10 @@ function ImportHero(): React.JSX.Element {
                 Import
               </button>
             </form>
+            <p className="mt-2 px-1 text-left text-[11px] text-zinc-500">
+              Live on YouTube? Imports the footage available now, then stops. Rewind must be enabled;
+              older footage may no longer be available.
+            </p>
             <CookieBrowserPicker />
           </>
         )}

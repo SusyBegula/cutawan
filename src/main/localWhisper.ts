@@ -21,9 +21,9 @@ export function localWhisperPaths(root: string, platform = process.platform): {
   }
 }
 
-function installScript(): string {
-  return app.isPackaged ? join(process.resourcesPath, 'local-whisper', 'install.py')
-    : join(app.getAppPath(), 'resources', 'local-whisper', 'install.py')
+function localWhisperResource(name: string): string {
+  return app.isPackaged ? join(process.resourcesPath, 'local-whisper', name)
+    : join(app.getAppPath(), 'resources', 'local-whisper', name)
 }
 
 function run(command: string, args: string[], signal: AbortSignal, progress: (message: string) => void): Promise<void> {
@@ -95,8 +95,13 @@ export async function installLocalWhisper(
       }
     }
     announce(0.2, 'Installing faster-whisper in the private environment…')
-    await run(paths.python, ['-m', 'pip', 'install', '--disable-pip-version-check', 'faster-whisper', 'huggingface-hub'],
+    await run(paths.python, ['-m', 'pip', 'install', '--disable-pip-version-check', '-r', localWhisperResource('requirements.txt')],
       controller.signal, message => announce(0.3, message))
+    if (process.platform === 'win32') {
+      announce(0.35, 'Checking NVIDIA runtime libraries…')
+      await run(paths.python, [localWhisperResource('install_gpu.py')], controller.signal,
+        message => announce(0.35, message))
+    }
     // Apple Silicon also gets the MLX build, which transcribes on the GPU.
     // Optional: the CPU path still works if it cannot be installed.
     let gpu = false
@@ -113,7 +118,7 @@ export async function installLocalWhisper(
     }
     announce(0.45, `Downloading the ${model} speech model…`)
     const download = (withGpu: boolean): Promise<void> =>
-      run(paths.python, ['-u', installScript(), model, modelPath, ...(withGpu ? ['--mlx'] : [])],
+      run(paths.python, ['-u', localWhisperResource('install.py'), model, modelPath, ...(withGpu ? ['--mlx'] : [])],
         controller.signal, message => announce(-1, message))
     try {
       await download(gpu)
@@ -125,7 +130,7 @@ export async function installLocalWhisper(
       await download(false)
     }
     announce(0.95, 'Checking the local transcription setup…')
-    await run(paths.python, ['-c', 'import ctranslate2, faster_whisper; print("ready")'], controller.signal, () => {})
+    await run(paths.python, [localWhisperResource('audio_check.py')], controller.signal, () => {})
     announce(1, 'Local Whisper is ready.')
     return { pythonPath: paths.python, modelPath }
   } finally {

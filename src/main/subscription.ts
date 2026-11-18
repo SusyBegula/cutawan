@@ -82,7 +82,8 @@ export function cmdLine(parts: string[]): string {
   return parts.map((part) => `"${part.replace(/"/g, '""')}"`).join(' ')
 }
 
-async function run(executable: string, args: string[], input: string, signal: AbortSignal): Promise<string> {
+async function run(executable: string, args: string[], input: string, signal: AbortSignal,
+  failureHint = 'Check setup, sign-in and subscription limits.'): Promise<string> {
   signal.throwIfAborted()
   const { command, prefix, node, shell } = commandFor(executable)
   return new Promise((accept, reject) => {
@@ -126,7 +127,7 @@ async function run(executable: string, args: string[], input: string, signal: Ab
     })
     child.on('close', code => { cleanup(); return code === 0 && !signal.aborted ? accept(stdout || stderr) : reject(new Error(
       signal.aborted ? 'Local provider cancelled or timed out.' :
-        `Local provider exited (${code}). Check setup, sign-in and subscription limits. ${stderr.replace(/(?:sk-|Bearer\s+)\S+/gi, '[redacted]')}`
+        `Local provider exited (${code}). ${failureHint} ${stderr.replace(/(?:sk-|Bearer\s+)\S+/gi, '[redacted]')}`
     )) })
     child.stdin.on('error', () => { /* handled by close/error */ })
     child.stdin.end(input)
@@ -153,7 +154,8 @@ export async function checkSubscriptionSetup(): Promise<{ message: string; reque
 export async function checkLocalWhisperSetup(): Promise<{ message: string }> {
   const config = { ...preferences }
   if (!config.whisperModelPath) throw new Error('Install local Whisper or choose a model folder first.')
-  await run(config.pythonPath, [scriptPath(), '--check'], JSON.stringify({ modelPath: config.whisperModelPath }), AbortSignal.timeout(30_000))
+  await run(config.pythonPath, [scriptPath(), '--check'], JSON.stringify({ modelPath: config.whisperModelPath }), AbortSignal.timeout(30_000),
+    'Check local Whisper installation and Python packages in Settings.')
   return { message: 'Local Whisper dependencies and model files are ready. No transcription was run.' }
 }
 
@@ -274,7 +276,7 @@ export async function transcribeLocally(filePath: string, opts: TranscribeFileOp
   const output = await run(config.pythonPath, [scriptPath()], JSON.stringify({
     modelPath: config.whisperModelPath, path: filePath,
     language: opts.language === 'auto' ? null : opts.language, prompt: opts.contextPrompt
-  }), signal)
+  }), signal, 'Check local Whisper installation and Python packages in Settings.')
   const value = JSON.parse(output) as WhisperResponse
   if (!Array.isArray(value.words) || !Array.isArray(value.segments) || !Number.isFinite(value.duration)) throw new Error('Local transcription returned an invalid result.')
   return value

@@ -597,6 +597,8 @@ export interface ImportProgress {
   /** 0..1, or -1 when indeterminate. */
   progress: number
   message: string
+  /** Current phase's bar, 0..1 or -1 when preparing; otherwise use progress. */
+  phaseProgress?: number
 }
 
 /** Editor timeline data for a window of the source video. */

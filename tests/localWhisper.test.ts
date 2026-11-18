@@ -66,7 +66,33 @@ it('creates a private environment and downloads only the selected model', async 
       expect.objectContaining({ shell: false }))
     expect(downloadCall()).toContain('small')
     expect(downloadCall()).not.toContain('--mlx')
+    const install = mock.spawn.mock.calls.map(c => c[1] as string[]).find(args => args.includes('pip'))!
+    expect(install).toContain('-r')
+    expect(install.at(-1)).toBe(join(mock.root, 'resources', 'local-whisper', 'requirements.txt'))
+    expect(mock.spawn.mock.calls.at(-1)?.[1]).toEqual([join(mock.root, 'resources', 'local-whisper', 'audio_check.py')])
     expect(progress).toHaveBeenCalledWith({ progress: 1, message: 'Local Whisper is ready.' })
+  } finally { restore() }
+})
+
+it('does not report local Whisper ready when audio decoding fails', async () => {
+  mock.root = await mkdtemp(join(tmpdir(), 'cutawan-whisper-test-'))
+  succeedUnless(args => args.some(arg => arg.endsWith('audio_check.py')))
+  const progress = vi.fn()
+  await expect(installLocalWhisper('small', 'python', progress)).rejects.toThrow('Whisper installation failed')
+  expect(progress).not.toHaveBeenCalledWith({ progress: 1, message: 'Local Whisper is ready.' })
+})
+
+it('prepares private CUDA libraries on Windows before verifying transcription', async () => {
+  const restore = fakePlatform('win32', 'x64')
+  try {
+    mock.root = await mkdtemp(join(tmpdir(), 'cutawan-whisper-test-'))
+    succeedUnless()
+    await installLocalWhisper('small', 'python', vi.fn())
+    const steps = mock.spawn.mock.calls.map(call => call[1] as string[])
+    const gpu = steps.findIndex(args => args.some(arg => arg.endsWith('install_gpu.py')))
+    const check = steps.findIndex(args => args.some(arg => arg.endsWith('audio_check.py')))
+    expect(gpu).toBeGreaterThan(0)
+    expect(check).toBeGreaterThan(gpu)
   } finally { restore() }
 })
 

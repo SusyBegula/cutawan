@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { createWriteStream, existsSync } from 'node:fs'
 import { chmod, mkdir, rename } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
@@ -9,6 +10,7 @@ import { app } from 'electron'
 import type { BrowserCookieSource, ImportProgress } from '@shared/types'
 import { CHROMIUM_BROWSERS } from '@shared/cookies'
 import { FFMPEG_PATH } from './ffmpeg'
+import { createMergeReporter, mergerArgs } from './mergeProgress'
 
 /**
  * yt-dlp integration for URL imports. The standalone binary (~30 MB per
@@ -46,7 +48,7 @@ export function ytDlpPath(): string {
   return join(binaryDir(), binaryName())
 }
 
-/** Directory passed to --plugin-dirs (contains yt_dlp_plugins/). */
+/** --plugin-dirs contains plugin packages, each with a yt_dlp_plugins/ folder. */
 export function ytDlpPluginDir(): string {
   if (app?.isPackaged) return join(process.resourcesPath, 'yt-dlp-plugins')
   return join(process.cwd(), 'resources', 'yt-dlp-plugins')
@@ -93,6 +95,8 @@ export interface UrlVideoMeta {
   title: string
   durationSec: number
   webpageUrl: string
+  /** Ongoing YouTube broadcast; download the available rewind buffer once. */
+  liveSnapshot?: boolean
 }
 
 export interface CookieAuthOptions {
@@ -264,6 +268,9 @@ interface YtDlpJson {
   webpage_url?: string
   url?: string
   entries?: YtDlpJson[]
+  is_live?: boolean
+  live_status?: string
+  extractor_key?: string
 }
 
 function baseArgs(cookieOpts: CookieAuthOptions): string[] {
@@ -297,26 +304,60 @@ export async function fetchUrlMeta(
     data = { ...main, title: main.title ?? data.title, webpage_url: main.url ?? main.webpage_url }
   }
 
-  if (!data.duration || data.duration <= 0) {
+  if (data.live_status === 'is_upcoming') {
+    throw new Error('This livestream has not started yet. Try again after it goes live.')
+  }
+  const isLive = data.is_live === true || data.live_status === 'is_live'
+  const liveSnapshot = isLive && data.extractor_key?.toLowerCase() === 'youtube'
+  if (isLive && !liveSnapshot) {
+    throw new Error('Ongoing livestream imports currently support YouTube only. Import the recording after this stream ends.')
+  }
+  if (!liveSnapshot && (!data.duration || !Number.isFinite(data.duration) || data.duration <= 0)) {
     throw new Error('This URL does not point to a downloadable video.')
   }
   return {
     id: data.id ?? 'video',
     title: data.title ?? 'Imported video',
-    durationSec: data.duration,
-    webpageUrl: data.webpage_url ?? data.url ?? url
+    durationSec: liveSnapshot ? 0 : data.duration!,
+    webpageUrl: data.webpage_url ?? data.url ?? url,
+    liveSnapshot
   }
 }
 
 const DOWNLOAD_FORMAT = 'bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4]/b'
+// yt-dlp shares these workers across the selected audio and video tracks.
+const DOWNLOAD_WORKERS = 32
+const DOWNLOAD_PROGRESS = 'download:CUTAWAN_PROGRESS %(info.format_id)s %(progress.status)s ' +
+  '%(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s ' +
+  '%(progress.speed)s %(progress.fragment_index)s %(progress.fragment_count)s'
+
+function progressNumber(value: string): number | undefined {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined
+}
 
 export async function downloadUrlVideo(
   binPath: string,
   url: string,
   outPath: string,
   onProgress: ProgressFn,
-  cookieOpts: CookieAuthOptions = {}
+  cookieOpts: CookieAuthOptions = {},
+  liveSnapshot = false,
+  durationSec = 0
 ): Promise<void> {
+  const progressPath = join(dirname(outPath), `.${basename(outPath)}.${randomUUID()}.merge-progress`)
+  const merger = createMergeReporter(progressPath, onProgress, durationSec)
+  const tracks = new Map<string, { fraction?: number; speed: number }>()
+  const liveArgs: string[] = []
+  if (liveSnapshot) {
+    const dir = ytDlpPluginDir()
+    if (!existsSync(join(dir, 'cutawan', 'yt_dlp_plugins', 'postprocessor', 'live_snapshot.py'))) {
+      throw new Error('The livestream import plugin is missing. Restore resources/yt-dlp-plugins and retry.')
+    }
+    liveArgs.push('--plugin-dirs', dir, '--live-from-start',
+      '--use-postprocessor', 'CutawanLiveSnapshot:when=before_dl', '--abort-on-unavailable-fragments')
+    onProgress({ progress: -1, message: 'Downloading livestream footage available now (rewind must be enabled)…' })
+  }
   await runYtDlp(
     binPath,
     [
@@ -326,19 +367,63 @@ export async function downloadUrlVideo(
       '--no-playlist',
       '--no-warnings',
       '--newline',
+      '--concurrent-fragments', String(DOWNLOAD_WORKERS),
+      '--progress-template', DOWNLOAD_PROGRESS,
+      '--postprocessor-args', mergerArgs(progressPath),
       ...baseArgs(cookieOpts),
+      ...liveArgs,
       '-o', outPath,
       url
     ],
     (line) => {
+      const snapshotDuration = line.match(/\bCUTAWAN_SNAPSHOT_DURATION ([\d.]+)/)
+      if (snapshotDuration) {
+        merger.setDuration(Number(snapshotDuration[1]))
+        return
+      }
+      const structured = line.match(/\bCUTAWAN_PROGRESS (\S+) (downloading|finished) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+)/)
+      if (structured) {
+        const [, format, status, bytes, total, estimate, speed, index, count] = structured
+        const previous = tracks.get(format)
+        const downloaded = progressNumber(bytes)
+        const expected = progressNumber(total) ?? progressNumber(estimate)
+        const fragment = progressNumber(index)
+        const fragments = progressNumber(count)
+        const fraction = status === 'finished' ? 1
+          : fragment !== undefined && fragments ? Math.min(1, fragment / fragments)
+          : downloaded !== undefined && expected ? Math.min(1, downloaded / expected)
+          : previous?.fraction
+        tracks.set(format, { fraction, speed: status === 'finished' ? 0 : progressNumber(speed) ?? previous?.speed ?? 0 })
+        const activeTracks = [...tracks.values()]
+        const combinedSpeed = activeTracks.reduce((sum, track) => sum + track.speed, 0)
+        // The slowest track still needs to finish before we can merge. Small
+        // audio tracks must not make a long video appear almost downloaded.
+        const fractions = activeTracks.map(track => track.fraction)
+        const overall = fractions.every((value): value is number => value !== undefined)
+          ? Math.min(...fractions) : undefined
+        const rate = combinedSpeed > 0
+          ? ` ${(combinedSpeed / 1e6).toFixed(1)} MB/s (${Math.round(combinedSpeed * 8 / 1e6)} Mbps)` : ''
+        onProgress({
+          progress: overall === undefined ? -1 : 0.15 + overall * 0.8,
+          message: `${liveSnapshot ? 'Downloading livestream snapshot…' : 'Downloading video…'}${rate}`
+        })
+        return
+      }
       const match = line.match(/\[download\]\s+([\d.]+)%/)
       if (match) {
         // Map download to 0.15..0.95 of the import (after binary setup).
         const fraction = Number(match[1]) / 100
-        onProgress({ progress: 0.15 + fraction * 0.8, message: 'Downloading video…' })
+        onProgress({ progress: 0.15 + fraction * 0.8,
+          message: liveSnapshot ? 'Downloading livestream snapshot…' : 'Downloading video…' })
       } else if (line.includes('[Merger]')) {
-        onProgress({ progress: 0.96, message: 'Merging streams…' })
+        merger.start()
       }
     }
-  )
+  ).then(() => merger.finish()).catch((error: unknown) => {
+    if (liveSnapshot && error instanceof YtDlpError &&
+      /no formats.*(?:from the start|live-from-start)|live-from-start.*no formats/i.test(error.message)) {
+      throw new YtDlpError('This YouTube livestream does not expose rewindable footage. Enable DVR on the broadcast or import its recording after it ends.')
+    }
+    throw error
+  }).finally(() => merger.stop())
 }

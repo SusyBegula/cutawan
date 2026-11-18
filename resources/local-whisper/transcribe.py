@@ -1,6 +1,5 @@
 """Local word-timestamp transcription. Dependencies/models are installed explicitly."""
 import json
-import os
 from pathlib import Path
 import platform
 import sys
@@ -10,18 +9,15 @@ model_path = Path(job.get("modelPath") or "")
 if not (model_path / "model.bin").is_file():
     raise RuntimeError("Select a downloaded faster-whisper model folder containing model.bin.")
 
-# Keep Windows CUDA libraries available for the lifetime of the process.
-handles = []
-if sys.platform == "win32":
-    for entry in sys.path:
-        for directory in (Path(entry) / "nvidia").glob("*/bin"):
-            handles.append(os.add_dll_directory(str(directory)))
-            os.environ["PATH"] = str(directory) + os.pathsep + os.environ.get("PATH", "")
+from audio_check import prepare_windows_cuda
+prepare_windows_cuda()
 
 import ctranslate2
 from faster_whisper import WhisperModel, decode_audio
 
 if "--check" in sys.argv:
+    from audio_check import verify_audio_decoder
+    verify_audio_decoder()
     print(json.dumps({"ready": True}))
     sys.exit(0)
 

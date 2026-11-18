@@ -72,7 +72,7 @@ export async function createProjectFromUrl(
   const videoPath = join(dir, 'source.mp4')
   onProgress({ progress: 0.15, message: 'Downloading video…' })
   await withSelfUpdateRetry(binPath, onProgress, () =>
-    downloadUrlVideo(binPath, meta.webpageUrl, videoPath, onProgress, cookieOpts)
+    downloadUrlVideo(binPath, meta.webpageUrl, videoPath, onProgress, cookieOpts, meta.liveSnapshot, meta.durationSec)
   ).catch(rethrowWithLoginHint(prefs.importCookiesBrowser, Boolean(prefs.importCookiesPath)))
 
   onProgress({ progress: 0.97, message: 'Reading video…' })

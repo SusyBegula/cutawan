@@ -6,6 +6,23 @@ the [releases page](https://github.com/JeremySNR/cutawan/releases).
 This project uses [semantic versioning](https://semver.org/), loosely: while
 still pre-1.0, minor bumps carry new features and patch bumps carry fixes.
 
+## [0.15.0] - 2026-11-18
+
+### Added
+
+- Import ongoing YouTube livestreams as a fixed snapshot of the currently available rewindable footage, without waiting for the broadcast to end. Rewind support is required; unavailable older footage cannot be recovered.
+
+### Improved
+
+- Download video fragments in parallel to make better use of fast connections. Import progress now shows the combined transfer speed in MB/s and Mbps, and waits for the slower audio or video track before showing completion.
+- Stream merging shows its own progress bar, processed duration, processing speed and estimated time remaining. Local source imports skip the extra MP4 fast-start pass to reduce disk work while preserving the original audio and video quality.
+- This Windows build checks for updates from SusyBegula/cutawan.
+
+### Fixed
+
+- Local transcription installs compatible audio-decoder versions, preventing the `metadata_errors` failure. Windows GPU setup installs its private NVIDIA runtime libraries. Setup now checks audio decoding and GPU libraries before reporting ready, and transcription failures point to local Whisper settings.
+- Bundled downloader plugins are now discovered correctly, including the browser cookie helper.
+
 ## [0.14.0] - 2026-10-13
 
 ### Added

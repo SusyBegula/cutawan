@@ -1,11 +1,15 @@
 {
   "name": "cutawan",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Open-source AI video clipper — turn long videos into viral short clips (an Opus Clip alternative)",
   "main": "out/main/index.js",
   "author": "Cutawan Contributors",
   "license": "MIT",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SusyBegula/cutawan.git"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -58,7 +62,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "JeremySNR",
+      "owner": "SusyBegula",
       "repo": "cutawan",
       "releaseType": "draft"
     },
@@ -73,7 +77,8 @@
     "extraResources": [
       {
         "from": "resources/local-whisper",
-        "to": "local-whisper"
+        "to": "local-whisper",
+        "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc"]
       },
       {
         "from": "build/icon.png",
@@ -89,7 +94,8 @@
       },
       {
         "from": "resources/yt-dlp-plugins",
-        "to": "yt-dlp-plugins"
+        "to": "yt-dlp-plugins",
+        "filter": ["**/*", "!**/__pycache__/**", "!**/*.pyc"]
       }
     ],
     "mac": {
