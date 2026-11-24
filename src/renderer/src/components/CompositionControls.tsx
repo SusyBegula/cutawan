@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Clip, Composition, ContentRegion } from '@shared/types'
 import { isPresenterComposition, presenterComposition } from '@shared/composition'
-import { compositionHidesTitle, layoutReviewMessage, layoutShotAt, validLayoutShots } from '@shared/contentType'
+import { layoutReviewMessage, layoutShotAt, validLayoutShots } from '@shared/contentType'
 import { usePreviewBus } from '../lib/previewBus'
 import { useStore } from '../store'
 import ManualLayoutEditor from './ManualLayoutEditor'
@@ -44,7 +44,8 @@ export default function CompositionControls({ clip }: { clip: Clip }): React.JSX
     setAdding(false)
   }
   return <div className="mt-3 space-y-2">
-    {issue && <p className="text-xs text-amber-300">Review layout: {issue}</p>}
+    {issue && <details className="rounded-lg border border-amber-500/15 bg-amber-500/5 p-2.5 text-[11px] text-amber-300">
+      <summary className="cursor-pointer">Layout needs review</summary><p className="mt-2 leading-relaxed text-zinc-400">{issue}</p></details>}
     {issue && !clip.edit.layoutChosen && !clip.visualLayout?.revision && <div className="space-y-1">
       <button type="button" disabled={busy} onClick={() => void retry(clip.id, true)}
         className="text-xs text-zinc-300 underline underline-offset-4 disabled:opacity-40">
@@ -87,15 +88,15 @@ export default function CompositionControls({ clip }: { clip: Clip }): React.JSX
       </div>
       <p className="text-[11px] leading-relaxed text-zinc-500">
         {clip.edit.aspect !== '9:16' ? 'Presenter layouts are available in 9:16. Other formats keep the full scene.' :
-          'Separate crops from the original video. Automatic layouts are checked on sampled frames; review motion before exporting.'}
+          'Use Edit on canvas to move and resize the panels.'}
       </p>
-      {compositionHidesTitle(clip) && clip.edit.showTitle && <p className="text-[11px] text-zinc-500">The hook title is hidden to keep the presenter clear.</p>}
       {active && isPresenterComposition(shot?.composition) && <RegionForm key={`${shot!.start}:${JSON.stringify(shot!.composition)}:${!!clip.edit.manualComposition}`}
         composition={shot!.composition!} locked={!!clip.edit.manualComposition} onSave={saveRegions} />}
-      {active && shot?.composition && isPresenterComposition(shot.composition) && <ManualLayoutEditor
+      {active && shot?.composition && isPresenterComposition(shot.composition) && <details className="text-xs text-zinc-400">
+        <summary className="cursor-pointer py-2">Advanced layout</summary><ManualLayoutEditor
         key={`${JSON.stringify(shot.composition)}:${!!clip.edit.manualComposition}`} clipId={clip.id}
         captionPosition={clip.edit.captionPosition}
-        blurBackground={clip.edit.reframeMode === 'fit-blur'} composition={shot.composition} locked={!!clip.edit.manualComposition} onSave={saveRegions} />}
+        blurBackground={clip.edit.reframeMode === 'fit-blur'} composition={shot.composition} locked={!!clip.edit.manualComposition} onSave={saveRegions} /></details>}
       {clip.edit.manualComposition && <button type="button" className="text-xs text-amber-200 underline"
         onClick={() => void update({ ...clip, edit: { ...clip.edit, manualComposition: undefined } })}>Unlock whole-clip regions</button>}
     </>}
@@ -156,7 +157,8 @@ function RegionForm({ composition, onSave, open, locked = false }: { composition
           setError('')
           setSelection(null)
         }} />}
-      {composition.layers.map(layer => <fieldset key={layer.role}>
+      <details><summary className="cursor-pointer">Advanced source coordinates</summary>
+      <div className="mt-2 space-y-2">{composition.layers.map(layer => <fieldset key={layer.role}>
         <legend className="mb-1 capitalize">{layer.role} (% of source)</legend>
         <div className="grid grid-cols-4 gap-1">
           {(['x', 'y', 'width', 'height'] as const).map(field => <label key={field} className="text-[10px]">
@@ -169,7 +171,7 @@ function RegionForm({ composition, onSave, open, locked = false }: { composition
               className="mt-1 w-full rounded border border-surface-600 bg-surface-850 p-1 text-xs text-zinc-200" />
           </label>)}
         </div>
-      </fieldset>)}
+      </fieldset>)}</div></details>
       {error && <p role="alert" className="text-amber-300">{error}</p>}
       <label className="flex items-center gap-2"><input type="checkbox" checked={lock} onChange={event => setLock(event.target.checked)} />
         Keep these source regions fixed for the whole clip</label>

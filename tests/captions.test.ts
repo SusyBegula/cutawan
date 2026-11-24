@@ -27,6 +27,14 @@ describe('buildAss', () => {
     expect(events.every(line => line.includes('\\pos(-108,576)'))).toBe(true)
   })
 
+  it('scales the exported caption font while preserving its manual centre anchor', () => {
+    const normal = buildAss(transcript, base)
+    const large = buildAss(transcript, { ...base, captionScale: 1.5, captionPosition: { x: .4, y: .6 } })
+    const size = (ass: string): number => Number(ass.split('\n').find(line => line.startsWith('Style: Caption,'))!.split(',')[2])
+    expect(size(large) / size(normal)).toBeCloseTo(1.5, 1)
+    expect(large).toContain('\\pos(432,1152)')
+  })
+
   it('splits a caption event at a layout boundary to keep preview and export positions aligned', () => {
     const ass = buildAss(transcript, { ...base, positionRanges: [{ start: .25, end: .4, positionY: .38 }] })
     const events = ass.split('\n').filter(l => l.startsWith('Dialogue: 0,'))
@@ -122,6 +130,6 @@ describe('buildAss', () => {
     expect(buildAss(transcript, base)).toContain('Style: Caption,Anton,')
     const ass = buildAss(transcript, { ...base, fontFamily: 'My Brand Font' })
     expect(ass).toContain('Style: Caption,My Brand Font,')
-    expect(ass).toContain('Style: Title,My Brand Font,')
+    expect(ass).toContain('Style: Title,Arial,')
   })
 })

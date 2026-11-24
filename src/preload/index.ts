@@ -22,6 +22,7 @@ import type {
 import type { OpenRouterCatalog } from '@shared/openrouter'
 
 const api = {
+  selectMusic: (): Promise<{ path: string; name: string; duration: number } | null> => ipcRenderer.invoke('music:select'),
   checkSubscriptionSetup: (): Promise<{ message: string; requestsToday: number }> => ipcRenderer.invoke('settings:checkSubscription'),
   checkLocalWhisperSetup: (): Promise<{ message: string }> => ipcRenderer.invoke('settings:checkLocalWhisper'),
   listOpenRouterModels: (refresh = false): Promise<OpenRouterCatalog> => ipcRenderer.invoke('openrouter:models', refresh),

@@ -1,7 +1,9 @@
+import CreativeControls from './CreativeControls'
 import { useEffect, useState } from 'react'
 import {
   Captions,
-  CaseUpper,
+  Music,
+  WandSparkles,
   Check,
   Copy,
   Crop,
@@ -11,7 +13,9 @@ import {
   Loader2,
   Quote,
   ScanFace,
-  Scissors,
+  MoreHorizontal,
+  SlidersHorizontal,
+  Stamp,
   Share2,
   Sparkles,
   Trash2,
@@ -32,7 +36,7 @@ import { EditorialExplanation, EditorialScore } from './EditorialSummary'
 import { editorialAssessmentCurrent } from '@shared/editorialRanking'
 import TranscriptEditor from './TranscriptEditor'
 import { ExportButton } from './ClipsScreen'
-import SizeTargetControls from './SizeTargetControls'
+import ExportDialog from './ExportDialog'
 import { CAPTION_STYLES, resolveCaptionStyle } from '@shared/captionStyles'
 import { formatBytes, formatTimecode } from '../lib/format'
 import type { AspectRatio, BrollItem, BrollMode, Clip, FramingMode, ReframeMode } from '@shared/types'
@@ -64,6 +68,10 @@ export default function EditorScreen(): React.JSX.Element {
   const ensureReframe = useStore((s) => s.ensureReframe)
   const reframeError = useStore((s) => s.reframeError)
 
+  const [tab, setTab] = useState<'layout' | 'captions' | 'watermark' | 'more' | 'hook' | 'audio' | 'effects'>('layout')
+  const [exportOpen, setExportOpen] = useState(false)
+  const [playbackTarget, setPlaybackTarget] = useState<HTMLDivElement | null>(null)
+  const [canvasEditing, setCanvasEditing] = useState(false)
   const clip = project?.clips.find((c) => c.id === selectedClipId) ?? null
 
   const videoPath = project?.video.path
@@ -144,23 +152,21 @@ export default function EditorScreen(): React.JSX.Element {
   const automaticLayout = automaticLayoutShots(clip).length > 0
 
   return (
-    <div className="flex h-full min-h-0">
-      <div className="flex min-h-0 flex-1 flex-col p-6">
-        <PreviewPlayer project={project} clip={clip} />
-      </div>
-
-      <aside className="flex w-[400px] shrink-0 flex-col gap-5 overflow-y-auto border-l border-surface-700 bg-surface-900 p-5">
+    <div className="editor-workspace flex h-full min-h-0">
+      <nav aria-label="Editing tools" className="editor-rail flex min-h-0 w-[76px] shrink-0 flex-col gap-2 overflow-y-auto border-r border-surface-700 bg-surface-900 px-2 py-4">
+        {([{id:'layout',label:'Frame',icon:Crop},{id:'captions',label:'Captions',icon:Captions},{id:'hook',label:'Hook text',icon:Type},{id:'audio',label:'Audio',icon:Music},{id:'effects',label:'Effects',icon:WandSparkles},{id:'watermark',label:'Brand',icon:Stamp},{id:'more',label:'More',icon:MoreHorizontal}] as const).map(tool=><button key={tool.id} id={`editor-tab-${tool.id}`} type="button" aria-pressed={tab===tool.id} onClick={()=>setTab(tool.id)} className={`flex min-h-16 flex-col items-center justify-center gap-2 rounded-xl text-[10px] font-medium transition ${tab===tool.id?'bg-indigo-500/15 text-indigo-300 ring-1 ring-indigo-400/20':'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'}`}><tool.icon size={19}/>{tool.label}</button>)}
+      </nav>
+      <aside className="flex w-[310px] shrink-0 flex-col border-r border-surface-700 bg-surface-900 xl:w-[340px]">
+        <div className="shrink-0 border-b border-surface-700 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <input
+              aria-label="Clip title"
               value={clip.title}
               onChange={(e) => updateClipLocal({ ...clip, title: e.target.value })}
               onBlur={() => void updateClip(clip)}
               className="w-full text-ellipsis rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-[15px] font-semibold focus:border-surface-600 focus:bg-surface-850 focus:outline-none"
             />
-            <p className="mt-1 px-1 text-xs leading-relaxed text-zinc-500">
-              {wholeVideo ? 'The whole video. The title names the exported file.' : clip.summary}
-            </p>
           </div>
           {wholeVideo ? (
             <span
@@ -169,58 +175,18 @@ export default function EditorScreen(): React.JSX.Element {
             >
               Full video
             </span>
-          ) : (
-            <EditorialScore clip={clip} current={assessmentCurrent} size="lg" />
-          )}
+          ) : null}
         </div>
 
-        {!wholeVideo && <EditorialExplanation clip={clip} current={assessmentCurrent} />}
-
-        <Section icon={Scissors} title="Trim">
-          <TimelineEditor
-            clip={clip}
-            windowStart={windowStart}
-            windowEnd={windowEnd}
-            fps={project.video.fps || 30}
-            timeline={timeline}
-            // Timeline edits never touch layout fields, so they save as-is
-            // (userClipEdit would mark the layout as manually chosen).
-            onLocal={(edit) => updateClipLocal({ ...clip, edit })}
-            onSave={(edit) => {
-              const live = useStore.getState().project?.clips.find((c) => c.id === clip.id) ?? clip
-              void updateClip({ ...live, edit })
-            }}
-          />
-          <div className="mt-3">
-            <Toggle
-              label="Tighten cuts — remove pauses and filler words"
-              checked={clip.edit.tightenCuts}
-              onChange={(v) => {
-                // Pause removal must not remove the last playable span.
-                if (keepsPlayback({ ...clip, edit: { ...clip.edit, tightenCuts: v } }, project.transcript)) set({ tightenCuts: v })
-              }}
-            />
-            {clip.edit.end - clip.edit.start > TIGHTEN_WARN_SEC && (
-              <p className="mt-1 text-[10px] leading-relaxed text-zinc-600">
-                Over an edit this long, tightening makes hundreds of cuts and a much slower
-                render.
-              </p>
-            )}
-          </div>
-          <div className="mt-2">
-            <Toggle
-              label="Auto zoom — punch-ins on emphasis, jump zooms covering cuts"
-              checked={clip.edit.autoZoom ?? false}
-              disabled={clip.edit.reframeMode !== 'crop' || automaticLayout}
-              onChange={(v) => set({ autoZoom: v })}
-            />
-            {(clip.edit.reframeMode !== 'crop' || automaticLayout) && (
-              <p className="mt-1 text-[10px] leading-relaxed text-zinc-600">
-                {automaticLayout ? 'Automatic composition keeps its checked framing; switch to Manual to add zoom.' : 'Auto zoom is only available with fill (crop) reframing.'}
-              </p>
-            )}
-          </div>
-        </Section>
+        <details className="mt-2 max-h-[35vh] overflow-y-auto text-xs text-zinc-500">
+          <summary className="w-fit cursor-pointer">Clip info</summary>
+          <p className="mt-3 text-xs leading-relaxed">{wholeVideo ? 'The whole video. The title names the exported file.' : clip.summary}</p>
+          {!wholeVideo && <div className="mt-3 space-y-3"><EditorialScore clip={clip} current={assessmentCurrent} size="lg" /><EditorialExplanation clip={clip} current={assessmentCurrent} /></div>}
+        </details>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {(['hook','audio','effects'] as const).map(mode => <div key={mode} hidden={tab!==mode}><CreativeControls clip={clip} mode={mode}/></div>)}
+        <div role="tabpanel" id="editor-panel-layout" aria-labelledby="editor-tab-layout" hidden={tab !== 'layout'}>
 
         <Section icon={Crop} title="Layout">
           <div className="grid grid-cols-4 gap-1.5">
@@ -238,8 +204,6 @@ export default function EditorScreen(): React.JSX.Element {
               </button>
             ))}
           </div>
-          <CompositionControls clip={clip} />
-          <OverlayControls key={clip.id} clip={clip} />
           {!cropDisabled && (
             <>
               <div className="mt-3 grid grid-cols-3 gap-1.5">
@@ -290,8 +254,7 @@ export default function EditorScreen(): React.JSX.Element {
                   ) : (
                     <>
                       <Loader2 size={12} className="shrink-0 animate-spin" />
-                      Preparing framing and content layout… You can keep editing while this
-                      finishes. Layout choices you make now are kept.
+                      Preparing framing…
                     </>
                   )}
                 </p>
@@ -353,8 +316,11 @@ export default function EditorScreen(): React.JSX.Element {
               )}
             </>
           )}
+          <CompositionControls clip={clip} />
         </Section>
 
+        </div>
+        <div role="tabpanel" id="editor-panel-captions" aria-labelledby="editor-tab-captions" hidden={tab !== 'captions'}>
         <Section icon={Captions} title="Captions">
           <Toggle
             label="Burn in captions"
@@ -426,28 +392,14 @@ export default function EditorScreen(): React.JSX.Element {
               )}
             </div>
           )}
-          <div className="mt-3">
-            <Toggle
-              label="Show hook title at start"
-              checked={clip.edit.showTitle}
-              onChange={(v) => set({ showTitle: v })}
-            />
-          </div>
-          {clip.edit.showTitle && (
-            <div className="mt-2.5">
-              <div className="mb-1 flex items-center gap-1.5 text-[11px] text-zinc-500">
-                <CaseUpper size={13} /> Hook text
-              </div>
-              <input
-                value={clip.hook}
-                onChange={(e) => updateClipLocal({ ...clip, hook: e.target.value })}
-                onBlur={() => void updateClip(clip)}
-                className="w-full rounded-lg border border-surface-600 bg-surface-850 px-3 py-2 text-xs text-zinc-200 focus:border-white/25 focus:outline-none"
-              />
-            </div>
-          )}
         </Section>
 
+        <OverlayControls key={`captions:${clip.id}`} clip={clip} mode="captions" />
+        </div>
+        <div role="tabpanel" id="editor-panel-watermark" aria-labelledby="editor-tab-watermark" hidden={tab !== 'watermark'}>
+          <OverlayControls key={`watermark:${clip.id}`} clip={clip} mode="watermark" />
+        </div>
+        <div role="tabpanel" id="editor-panel-more" aria-labelledby="editor-tab-more" hidden={tab !== 'more'} className="space-y-5">
         {!wholeVideo && (
         <Section icon={ImagePlus} title="B-roll">
           {clip.broll.length === 0 ? (
@@ -565,8 +517,10 @@ export default function EditorScreen(): React.JSX.Element {
 
         <ShareSection clip={clip} />
 
-        <div className="sticky bottom-0 -mx-5 -mb-5 border-t border-white/[0.06] bg-surface-900/80 p-4 backdrop-blur-xl">
-          <SizeTargetControls compact />
+        </div>
+        </div>
+        <div className="shrink-0 border-t border-surface-700 bg-surface-900 p-4">
+          <button type="button" onClick={() => setExportOpen(true)} className="mb-2 flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-white"><SlidersHorizontal size={12} />Export options</button>
           <div className="flex">
             <ExportButton
               status={entry?.status}
@@ -575,7 +529,7 @@ export default function EditorScreen(): React.JSX.Element {
               error={entry?.error}
               bytes={entry?.bytes}
               downscaled={entry?.downscaled}
-              onExport={() => void exportClip(clip.id)}
+              onExport={() => setExportOpen(true)}
               onCancel={() => void cancelExport(clip.id)}
             />
           </div>
@@ -603,6 +557,81 @@ export default function EditorScreen(): React.JSX.Element {
           )}
         </div>
       </aside>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center justify-between gap-3 px-5 pt-3">
+          <span className="truncate text-xs text-zinc-400">Canvas <span className="ml-2 text-zinc-600">{clip.edit.aspect === 'original' ? 'Original' : clip.edit.aspect}</span></span>
+          <button type="button" aria-pressed={canvasEditing} onClick={() => setCanvasEditing(!canvasEditing)}
+            className={`rounded-lg border px-3 py-1.5 text-xs transition ${canvasEditing ? 'border-white/30 bg-white/10 text-white' : 'border-surface-600 text-zinc-400 hover:text-white'}`}>
+            {canvasEditing ? 'Done arranging' : 'Edit on canvas'}
+          </button>
+        </div>
+        <div className="editor-stage min-h-0 flex-1 p-5">
+          <PreviewPlayer project={project} clip={clip} controlsTarget={playbackTarget} editing={canvasEditing} onSelectTool={setTab} />
+        </div>
+        <div data-testid="editor-timeline" className="shrink-0 border-t border-surface-700 bg-surface-900 px-5 py-3">
+          <div className="mb-2 flex items-center justify-between gap-4">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Timeline</span>
+            <div ref={setPlaybackTarget} className="w-full max-w-md" />
+          </div>
+          <div className="mb-2 flex gap-2 overflow-hidden text-[10px]">
+            {clip.edit.showTitle && <button onClick={()=>setTab('hook')} className="truncate rounded-md border border-indigo-400/20 bg-indigo-500/10 px-3 py-1 text-indigo-200">T · Hook text</button>}
+            {clip.edit.captionsEnabled && <button onClick={()=>setTab('captions')} className="rounded-md border border-surface-600 px-3 py-1 text-zinc-400">CC · Captions</button>}
+            {clip.edit.music?.enabled && <button onClick={()=>setTab('audio')} className="truncate rounded-md border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-emerald-200">♫ · {clip.edit.music.name}</button>}
+          </div>
+          <TimelineEditor
+            clip={clip}
+            windowStart={windowStart}
+            windowEnd={windowEnd}
+            fps={project.video.fps || 30}
+            timeline={timeline}
+            // Timeline edits never touch layout fields, so they save as-is
+            // (userClipEdit would mark the layout as manually chosen).
+            onLocal={(edit) => updateClipLocal({ ...clip, edit })}
+            onSave={(edit) => {
+              const live = useStore.getState().project?.clips.find((c) => c.id === clip.id) ?? clip
+              void updateClip({ ...live, edit })
+            }}
+          />
+
+          <details className="mt-2 text-[11px] text-zinc-500">
+            <summary className="w-fit cursor-pointer">Playback and cut options</summary>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <div>
+            <Toggle
+              label="Tighten cuts — remove pauses and filler words"
+              checked={clip.edit.tightenCuts}
+              onChange={(v) => {
+                // Pause removal must not remove the last playable span.
+                if (keepsPlayback({ ...clip, edit: { ...clip.edit, tightenCuts: v } }, project.transcript)) set({ tightenCuts: v })
+              }}
+            />
+            {clip.edit.end - clip.edit.start > TIGHTEN_WARN_SEC && (
+              <p className="mt-1 text-[10px] leading-relaxed text-zinc-600">
+                Over an edit this long, tightening makes hundreds of cuts and a much slower
+                render.
+              </p>
+            )}
+          </div>
+          <div className="mt-2">
+            <Toggle
+              label="Auto zoom — punch-ins on emphasis, jump zooms covering cuts"
+              checked={clip.edit.autoZoom ?? false}
+              disabled={clip.edit.reframeMode !== 'crop' || automaticLayout}
+              onChange={(v) => set({ autoZoom: v })}
+            />
+            {(clip.edit.reframeMode !== 'crop' || automaticLayout) && (
+              <p className="mt-1 text-[10px] leading-relaxed text-zinc-600">
+                {automaticLayout ? 'Automatic composition keeps its checked framing; switch to Manual to add zoom.' : 'Auto zoom is only available with fill (crop) reframing.'}
+              </p>
+            )}
+          </div>
+            </div>
+          </details>
+        </div>
+      </div>
+
+
+      {exportOpen && <ExportDialog clip={clip} onClose={() => setExportOpen(false)} onExport={() => { setExportOpen(false); void exportClip(clip.id) }} />}
     </div>
   )
 }

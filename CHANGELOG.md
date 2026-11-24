@@ -8,6 +8,22 @@ still pre-1.0, minor bumps carry new features and patch bumps carry fixes.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-24
+
+### Added
+
+- Independent Hook text controls for position, size, font, colors, duration and card/plain/outlined styling, including direct canvas manipulation and export without captions.
+- Import a local music file, loop it across the edited clip, set its start offset and volume, and balance it with original audio. Add separate picture and audio fade-in/fade-out durations.
+
+### Changed
+
+- A dark editor workspace with a left tool rail and inspector, an uncluttered canvas, and timeline shortcuts for hook, captions and soundtrack. All existing layout, transcript, B-roll, branding, sharing and export controls remain accessible.
+
+### Improved
+
+- The editor now has a bottom timeline, dedicated tools for framing, captions, Hook text, audio, effects and branding, a More panel for transcript, B-roll and sharing, collapsible clip information, and a dedicated export dialog. Select and arrange panels, captions and watermarks directly in the large preview, with precise coordinates under Advanced controls.
+- Caption size can be adjusted per clip with matching preview and export text sizing.
+
 ## [0.16.0] - 2026-11-19
 
 ### Fixed

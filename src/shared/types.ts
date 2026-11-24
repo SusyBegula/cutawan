@@ -116,6 +116,12 @@ export interface ClipEditState {
   manualComposition?: Composition
   /** Output centre anchor for captions and top-left anchor for the watermark. */
   captionPosition?: { x: number; y: number }
+  /** Multiplier on the caption preset's font size. */
+  captionScale?: number
+  hookStyle?: import('./editorEffects').HookStyle
+  music?: { path: string; name: string; volume: number; offset: number; enabled: boolean; duration?: number }
+  sourceVolume?: number
+  fades?: import('./editorEffects').ClipFades
   watermarkTransform?: { x: number; y: number; scale: number }
   /** False turns detected two-person split-screen ranges back into speaker crops. */
   speakerSplit?: boolean

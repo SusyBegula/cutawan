@@ -3,6 +3,7 @@ import { checkOpenRouterKey, listOpenRouterModels } from './openrouter'
 import { cancelLocalWhisperInstall, installLocalWhisper, type LocalWhisperModel } from './localWhisper'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { existsSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { copyFile, mkdir, rm } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import type {
@@ -19,7 +20,7 @@ import { mergeClipSave, needsReframe } from '@shared/reframe'
 import { analyzeProject, createProject, createProjectFromUrl } from './pipeline'
 import { captionWholeVideo } from './pipeline/wholeVideo'
 import { downloadGpuFfmpeg } from './pipeline/encoders'
-import { probeVideo } from './pipeline/ffmpeg'
+import { probeVideo, runBinary, FFPROBE_PATH } from './pipeline/ffmpeg'
 import { getTimeline } from './pipeline/timeline'
 import { renderClip } from './pipeline/render'
 import { ensureClipReframe } from './pipeline/reframe'
@@ -421,6 +422,19 @@ export function registerIpcHandlers(): void {
     return getSettings()
   })
 
+  handle('music:select', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const result = process.env.CUTAWAN_SELECT_MUSIC ? { canceled: false, filePaths: [process.env.CUTAWAN_SELECT_MUSIC] } : await dialog.showOpenDialog(win!, { title: 'Add background music', properties: ['openFile'], filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac'] }] })
+    if (result.canceled || !result.filePaths[0]) return null
+    const picked = result.filePaths[0]
+    const info = JSON.parse(await runBinary(FFPROBE_PATH, ['-v','error','-show_streams','-show_format','-of','json',picked]))
+    if (!info.streams?.some((s: { codec_type: string }) => s.codec_type === 'audio')) throw new Error('Choose a file with an audio track.')
+    const dir = join(app.getPath('userData'), 'music')
+    await mkdir(dir, { recursive: true })
+    const path = join(dir, `${randomUUID()}${extname(picked).toLowerCase()}`)
+    await copyFile(picked, path)
+    return { path, name: basename(picked), duration: Number(info.format?.duration) || 0 }
+  })
   handle('branding:selectLogo', async (event) => {
     // Headless/CI hook: skip the native dialog.
     let picked: string | null

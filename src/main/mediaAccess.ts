@@ -27,7 +27,7 @@ export function allowMediaPath(path: string): void {
  * key) and cookies/import-cookies.txt (live session cookies) live there too
  * and must never be reachable over media://.
  */
-const USER_DATA_MEDIA_DIRS = ['projects', 'fonts', 'branding', 'timeline-cache'] as const
+const USER_DATA_MEDIA_DIRS = ['projects', 'fonts', 'branding', 'timeline-cache', 'music'] as const
 
 /** Pure core of the allowlist check. Exported for tests. */
 export function isMediaPathAllowedIn(
@@ -52,6 +52,12 @@ export function isMediaPathAllowed(path: string): boolean {
 
 const MIME_TYPES: Record<string, string> = {
   '.mp4': 'video/mp4',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.ogg': 'audio/ogg',
+  '.flac': 'audio/flac',
   '.m4v': 'video/mp4',
   '.mov': 'video/quicktime',
   '.mkv': 'video/x-matroska',

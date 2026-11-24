@@ -38,6 +38,8 @@ function appIconPath(): string {
 async function runSmokeCapture(win: BrowserWindow, dir: string): Promise<void> {
   const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
   const shot = async (name: string): Promise<void> => {
+    win.webContents.invalidate()
+    await sleep(100)
     const image = await win.webContents.capturePage()
     await writeFile(join(dir, `${name}.png`), image.toPNG())
   }
@@ -128,6 +130,86 @@ async function runSmokeCapture(win: BrowserWindow, dir: string): Promise<void> {
   await click('[data-testid="clip-thumb"]')
   await sleep(800)
   await shot('editor')
+  if (process.env.CUTAWAN_SMOKE_EDITOR_REDESIGN) {
+    const click = async (text: string): Promise<void> => {
+      await win.webContents.executeJavaScript(`(() => {
+        const element = [...document.querySelectorAll('button,summary')].find(e => e.textContent.trim() === ${JSON.stringify(text)} && e.getClientRects().length)
+        if (!element) throw new Error('Missing visible control: ' + ${JSON.stringify(text)})
+        element.click()
+      })()`)
+      await sleep(300)
+    }
+    const drag = async (label: string, dx: number, dy: number): Promise<void> => {
+      win.webContents.invalidate()
+      await sleep(150)
+      const p = await win.webContents.executeJavaScript(`(() => {
+        const element = document.querySelector('[aria-label="' + ${JSON.stringify(label)} + '"]')
+        if (!element) throw new Error('Missing canvas target')
+        const r = element.getBoundingClientRect()
+        return { x: Math.round(r.x+r.width/2), y: Math.round(r.y+r.height/2) }
+      })()`)
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y })
+      win.webContents.sendInputEvent({ type: 'mouseDown', x: p.x, y: p.y, button: 'left', clickCount: 1 })
+      await sleep(80)
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: p.x+dx, y: p.y+dy })
+      win.webContents.sendInputEvent({ type: 'mouseUp', x: p.x+dx, y: p.y+dy, button: 'left', clickCount: 1 })
+      await sleep(400)
+    }
+    await shot('editor-clean-layout')
+    const layout = await win.webContents.executeJavaScript(`(() => {
+      const timeline = document.querySelector('[data-testid="editor-timeline"]')
+      return timeline && !timeline.closest('aside') && document.querySelectorAll('nav[aria-label="Editing tools"] button').length === 7
+        && !document.querySelector('dialog[open]')
+    })()`)
+    if (!layout) throw new Error('Timeline or inspector tabs misplaced')
+    await click('Edit on canvas')
+    const before = await win.webContents.executeJavaScript(`Number(document.querySelector('[aria-label="Caption x %"]').value)`)
+    await drag('Move captions on canvas', -18, -20)
+    const caption = await win.webContents.executeJavaScript(`Number(document.querySelector('[aria-label="Caption x %"]').value) < ${before} && document.querySelector('#editor-tab-captions').getAttribute('aria-pressed') === 'true'`)
+    if (!caption) throw new Error('Canvas caption drag or inspector selection failed')
+    await shot('editor-captions-tab')
+    await click('Hook text')
+    await drag('Move hook text on canvas', 10, 18)
+    if (!await win.webContents.executeJavaScript(`document.querySelector('#editor-tab-hook').getAttribute('aria-pressed') === 'true'`)) throw new Error('Hook canvas selection failed')
+    await shot('editor-hook-tool')
+    if (process.env.CUTAWAN_SELECT_MUSIC) {
+      await click('Audio')
+      await win.webContents.executeJavaScript(`document.querySelector('[aria-label="Add background music"]').click()`)
+      await sleep(800)
+      if (!await win.webContents.executeJavaScript(`!!document.querySelector('[aria-label="Music volume"]')`)) throw new Error('Music import failed')
+      await shot('editor-audio-tool')
+    }
+    await drag('Move watermark on canvas', 20, 18)
+    const width = await win.webContents.executeJavaScript(`Number(document.querySelector('[aria-label="Watermark width %"]').value)`)
+    await drag('Resize watermark se on canvas', 12, 6)
+    const resized = await win.webContents.executeJavaScript(`Number(document.querySelector('[aria-label="Watermark width %"]').value) > ${width} && document.querySelector('#editor-tab-watermark').getAttribute('aria-pressed') === 'true'`)
+    if (!resized) throw new Error('Canvas watermark resize or inspector selection failed')
+    await shot('editor-watermark-tab')
+    await click('Frame')
+    await click('Fit (letterbox)')
+    await click('Set presenter and content regions')
+    await click('Apply regions')
+    await drag('Move content on canvas', -12, 12)
+    if (!await win.webContents.executeJavaScript(`document.body.innerText.includes('Unlock whole-clip regions')`)) throw new Error('Direct panel arrangement was not saved')
+    await shot('editor-canvas-layout')
+    await click('More')
+    if (!await win.webContents.executeJavaScript(`document.querySelector('#editor-panel-more').getClientRects().length > 0`)) throw new Error('More tools are inaccessible')
+    await click('Export options')
+    if (!await win.webContents.executeJavaScript(`!!document.querySelector('dialog[open]')`)) throw new Error('Export dialog did not open')
+    await shot('editor-export-dialog')
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
+    await sleep(200)
+    if (await win.webContents.executeJavaScript(`!!document.querySelector('dialog[open]')`)) throw new Error('Export dialog did not close with Escape')
+    await win.setSize(1100, 760)
+    await click('Frame')
+    await click('Done arranging')
+    await sleep(300)
+    await shot('editor-compact-window')
+    console.log('PASS bottom timeline, inspector tabs, direct caption/panel movement, watermark resizing, and export dialog')
+    app.quit()
+    return
+  }
   if (process.env.CUTAWAN_SMOKE_REGIONS) {
     const clickText = async (text: string): Promise<void> => {
       const clicked = await win.webContents.executeJavaScript(`(() => {
@@ -147,6 +229,7 @@ async function runSmokeCapture(win: BrowserWindow, dir: string): Promise<void> {
       label.querySelector('input').click()
     })()`)
     await clickText('Apply regions')
+    await clickText('Advanced layout')
     await clickText('Arrange presenter and content manually')
     const resizePoint = await win.webContents.executeJavaScript(`(() => {
       const handle = document.querySelector('[data-testid="resize-content-se"]')
@@ -171,41 +254,6 @@ async function runSmokeCapture(win: BrowserWindow, dir: string): Promise<void> {
       [...document.querySelectorAll('button')].find(e => e.textContent.trim() === 'Fit (letterbox)').className.includes('border-white/30')
     `)) throw new Error('Applying regions changed letterbox mode')
     await shot('editor-fixed-regions')
-    await clickText('Move captions and watermark')
-    const captionPoint = await win.webContents.executeJavaScript(`(() => {
-      const label = document.querySelector('[aria-label="Drag captions"]')
-      label.scrollIntoView({ block: 'center' })
-      const r = label.getBoundingClientRect()
-      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), value: Number(document.querySelector('[aria-label="Caption x %"]').value) }
-    })()`)
-    win.webContents.sendInputEvent({ type: 'mouseMove', x: captionPoint.x, y: captionPoint.y })
-    win.webContents.sendInputEvent({ type: 'mouseDown', x: captionPoint.x, y: captionPoint.y, button: 'left', clickCount: 1 })
-    await sleep(80)
-    win.webContents.sendInputEvent({ type: 'mouseMove', x: captionPoint.x - 20, y: captionPoint.y - 20 })
-    win.webContents.sendInputEvent({ type: 'mouseUp', x: captionPoint.x - 20, y: captionPoint.y - 20, button: 'left', clickCount: 1 })
-    await sleep(400)
-    const movedCaption = await win.webContents.executeJavaScript(`Number(document.querySelector('[aria-label="Caption x %"]').value)`)
-    if (movedCaption >= captionPoint.value) throw new Error('Caption drag did not move the caption anchor')
-    const watermarkPoint = await win.webContents.executeJavaScript(`(() => {
-      const handle = document.querySelector('[aria-label="Resize watermark"]')
-      if (!handle) return null
-      handle.scrollIntoView({ block: 'center' })
-      const r = handle.getBoundingClientRect()
-      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), width: Number(document.querySelector('[aria-label="Watermark width %"]').value) }
-    })()`)
-    if (watermarkPoint) {
-      win.webContents.sendInputEvent({ type: 'mouseMove', x: watermarkPoint.x, y: watermarkPoint.y })
-      win.webContents.sendInputEvent({ type: 'mouseDown', x: watermarkPoint.x, y: watermarkPoint.y, button: 'left', clickCount: 1 })
-      await sleep(80)
-      win.webContents.sendInputEvent({ type: 'mouseMove', x: watermarkPoint.x + 12, y: watermarkPoint.y + 12 })
-      win.webContents.sendInputEvent({ type: 'mouseUp', x: watermarkPoint.x + 12, y: watermarkPoint.y + 12, button: 'left', clickCount: 1 })
-      await sleep(400)
-      const watermarkWidth = await win.webContents.executeJavaScript(`Number(document.querySelector('[aria-label="Watermark width %"]').value)`)
-      if (watermarkWidth <= watermarkPoint.width) throw new Error('Watermark corner did not resize its image')
-      console.log('PASS watermark corner resizing in Fit mode')
-    }
-    await shot('editor-overlay-placement')
-    console.log('PASS caption dragging with live placement controls')
     console.log('PASS corner resizing, fixed source regions and manual arrangement without blanking the editor')
     app.quit()
     return
@@ -330,6 +378,7 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
       backgroundThrottling: !process.env.CUTAWAN_SMOKE,
+      offscreen: !!process.env.CUTAWAN_SMOKE_EDITOR_REDESIGN,
       contextIsolation: true,
       nodeIntegration: false
     }

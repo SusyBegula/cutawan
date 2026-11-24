@@ -77,7 +77,7 @@ export default function TimelineEditor({ clip, windowStart, windowEnd, fps, time
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (typing(e.target) || e.altKey || e.defaultPrevented) return
+      if (typing(e.target) || e.altKey || e.defaultPrevented || document.querySelector('dialog[open]')) return
       const bus = usePreviewBus.getState()
       const mod = e.metaKey || e.ctrlKey
       const key = e.key.toLowerCase()
@@ -157,7 +157,7 @@ export default function TimelineEditor({ clip, windowStart, windowEnd, fps, time
           </span>
         )}
       </div>
-      <p className="mt-1.5 text-[10px] leading-relaxed text-zinc-600">{SHORTCUTS}</p>
+      <p className="mt-1.5 text-[10px] text-zinc-600" title={SHORTCUTS}>Space to play · S to split · Delete to cut · Hover for all shortcuts</p>
     </div>
   )
 }

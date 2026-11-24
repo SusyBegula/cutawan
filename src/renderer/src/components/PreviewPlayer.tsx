@@ -1,4 +1,8 @@
+import { hookStyle, bounded, fadeOpacity } from '@shared/editorEffects'
+import PreviewMusic from './PreviewMusic'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import CanvasTools from './CanvasTools'
 import { Play, Pause, RotateCcw } from 'lucide-react'
 import type { Clip, Project, WatermarkPosition } from '@shared/types'
 import { hexToRgba, resolveCaptionStyle } from '@shared/captionStyles'
@@ -9,7 +13,7 @@ import {
   wordsInRange
 } from '@shared/captionLayout'
 import { clipKeptSegments, TimeMap } from '@shared/tighten'
-import { automaticLayoutShots, clipAllowsAutoZoom, compositionHidesTitle, detailCaptionRanges, layoutBlocksAutoZoom } from '@shared/contentType'
+import { automaticLayoutShots, clipAllowsAutoZoom, detailCaptionRanges, layoutBlocksAutoZoom } from '@shared/contentType'
 import { captionPositionAt } from '@shared/contentRegion'
 import { computeZoomEvents, fitZoomEvents } from '@shared/zoom'
 import { formatTimecode } from '../lib/format'
@@ -29,10 +33,16 @@ import { useStore } from '../store'
  */
 export default function PreviewPlayer({
   project,
-  clip
+  clip,
+  controlsTarget,
+  editing = false,
+  onSelectTool
 }: {
   project: Project
   clip: Clip
+  controlsTarget?: HTMLElement | null
+  editing?: boolean
+  onSelectTool?: (tool: 'layout' | 'captions' | 'watermark' | 'hook') => void
 }): React.JSX.Element {
   const videoRef = useRef<HTMLVideoElement>(null)
   const zoomLayerRef = useRef<HTMLDivElement>(null)
@@ -300,59 +310,11 @@ export default function PreviewPlayer({
     requestSeek(timeMap ? timeMap.toSource(fraction * outputDuration) : start + fraction * duration)
   }
 
-  return (
-    <div className="flex h-full min-h-0 flex-col items-center gap-3">
-      <div
-        className="relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-surface-700 bg-black"
-        style={{ aspectRatio: String(aspectStyle), containerType: 'size', maxWidth: '100%' }}
-      >
-        {isFitBlur && clip.thumbnailPath && (
-          <img
-            src={window.cutawan.mediaUrl(clip.thumbnailPath)}
-            alt=""
-            className="absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-2xl brightness-75"
-          />
-        )}
-        <div ref={zoomLayerRef} className="absolute inset-0 will-change-transform" onClick={togglePlay}>
-          <video
-            ref={videoRef}
-            data-preview-source
-            src={src}
-            poster={clip.thumbnailPath ? window.cutawan.mediaUrl(clip.thumbnailPath) : undefined}
-            className="h-full w-full"
-            style={{ objectFit: isCrop ? 'cover' : 'contain' }}
-            onEnded={() => setPlaying(false)}
-            onSeeked={handleSeeked}
-            onLoadedData={() => applyFrame(videoRef.current?.currentTime ?? start)}
-            preload="auto"
-          />
-        </div>
-        <canvas ref={overviewRef} aria-hidden="true" className="pointer-events-none absolute left-0 top-0 hidden w-full" />
-        <BrollOverlay clip={clip} time={time} />
-        <WatermarkOverlay clip={clip} />
-        {clip.edit.captionsEnabled && project.transcript && (
-          <CaptionOverlay
-            transcript={project.transcript}
-            clip={clip}
-            time={time}
-            aspectRatio={aspectStyle}
-          />
-        )}
-        {clip.edit.showTitle && !compositionHidesTitle(clip) && (clip.hook || clip.title) && time - start < Math.min(4, duration) && (
-          <HookOverlay clip={clip} />
-        )}
-        {!playing && (
-          <button
-            onClick={togglePlay}
-            className="absolute inset-0 flex items-center justify-center bg-black/25 transition hover:bg-black/35"
-          >
-            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white/95 shadow-xl">
-              <Play size={22} className="ml-1 text-black" />
-            </span>
-          </button>
-        )}
-      </div>
-
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.volume = bounded(clip.edit.sourceVolume,1,0,1) * fadeOpacity(outputTime,outputDuration,clip.edit.fades?.audioIn,clip.edit.fades?.audioOut)
+  }, [clip.edit.sourceVolume, clip.edit.fades, outputTime, outputDuration])
+  const hook = hookStyle(clip.edit)
+  const controls = (
       <div className="flex w-full max-w-md items-center gap-3">
         <button
           onClick={togglePlay}
@@ -380,6 +342,64 @@ export default function PreviewPlayer({
           {formatTimecode(outputTime)} / {formatTimecode(outputDuration)}
         </span>
       </div>
+  )
+  return (
+    <div className="flex h-full min-h-0 flex-col items-center gap-3">
+      <div
+        className="relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-surface-700 bg-black"
+        style={{ aspectRatio: String(aspectStyle), containerType: 'size', maxWidth: '100%' }}
+      >
+        {isFitBlur && clip.thumbnailPath && (
+          <img
+            src={window.cutawan.mediaUrl(clip.thumbnailPath)}
+            alt=""
+            className="absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-2xl brightness-75"
+          />
+        )}
+        <div ref={zoomLayerRef} className="absolute inset-0 will-change-transform" onClick={editing ? undefined : togglePlay}>
+          <video
+            ref={videoRef}
+            data-preview-source
+            src={src}
+            poster={clip.thumbnailPath ? window.cutawan.mediaUrl(clip.thumbnailPath) : undefined}
+            className="h-full w-full"
+            style={{ objectFit: isCrop ? 'cover' : 'contain' }}
+            onEnded={() => setPlaying(false)}
+            onSeeked={handleSeeked}
+            onLoadedData={() => applyFrame(videoRef.current?.currentTime ?? start)}
+            preload="auto"
+          />
+        </div>
+        <canvas ref={overviewRef} aria-hidden="true" className="pointer-events-none absolute left-0 top-0 hidden w-full" />
+        <BrollOverlay clip={clip} time={time} />
+        <WatermarkOverlay clip={clip} />
+        {clip.edit.captionsEnabled && project.transcript && (
+          <CaptionOverlay
+            transcript={project.transcript}
+            clip={clip}
+            time={time}
+            aspectRatio={aspectStyle}
+          />
+        )}
+        {clip.edit.showTitle && (clip.hook || clip.title) && outputTime < Math.min(hook.duration, outputDuration) && (
+          <HookOverlay clip={clip} time={outputTime} duration={Math.min(hook.duration, outputDuration)} playing={playing} />
+        )}
+        <div className="pointer-events-none absolute inset-0 z-10 bg-black" style={{opacity:1-fadeOpacity(outputTime,outputDuration,clip.edit.fades?.videoIn,clip.edit.fades?.videoOut)}} />
+        <PreviewMusic clip={clip} time={outputTime} duration={outputDuration} playing={playing}/>
+        {!playing && !editing && (
+          <button
+            onClick={togglePlay}
+            className="absolute inset-0 flex items-center justify-center bg-black/25 transition hover:bg-black/35"
+          >
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white/95 shadow-xl">
+              <Play size={22} className="ml-1 text-black" />
+            </span>
+          </button>
+        )}
+        {editing && <CanvasTools clip={clip} project={project} ratio={aspectStyle} onSelect={tool => onSelectTool?.(tool)} onStart={() => { videoRef.current?.pause(); setPlaying(false) }} />}
+      </div>
+
+      {controlsTarget ? createPortal(controls, controlsTarget) : controls}
     </div>
   )
 }
@@ -399,7 +419,7 @@ function WatermarkOverlay({ clip }: { clip: Clip }): React.JSX.Element | null {
     <img
       src={window.cutawan.mediaUrl(branding.imagePath)}
       alt=""
-      className="pointer-events-none absolute"
+      className="pointer-events-none absolute max-w-none"
       style={{
         width: `${(clip.edit.watermarkTransform?.scale ?? Math.min(0.5, Math.max(0.04, branding.scale))) * 100}cqw`,
         opacity: Math.min(1, Math.max(0.05, branding.opacity)),
@@ -415,41 +435,11 @@ function WatermarkOverlay({ clip }: { clip: Clip }): React.JSX.Element | null {
  * top with a soft shadow, in the clip's caption font, so the preview matches
  * the render.
  */
-function HookOverlay({ clip }: { clip: Clip }): React.JSX.Element {
-  const brandColors = useStore((s) => s.settings?.branding.colors)
-  const style = resolveCaptionStyle(
-    clip.edit.captionStyleId,
-    brandColors,
-    clip.edit.captionFontFamily
-  )
-  const hookTextColor = brandColors?.enabled ? brandColors.hookTextColor : '#FFFFFF'
-  const hookBackgroundColor = brandColors?.enabled
-    ? hexToRgba(brandColors.hookBackgroundColor, 0.75)
-    : 'rgba(0,0,0,0.75)'
-  return (
-    <div
-      className="pointer-events-none absolute inset-x-0 flex justify-center px-[6cqw]"
-      style={{ top: '7cqh' }}
-    >
-      <span
-        className="hook-in inline-block max-w-[80cqw] text-center"
-        style={{
-          fontFamily: `'${style.fontFamily}', sans-serif`,
-          fontWeight: 700,
-          fontSize: '4.4cqh',
-          lineHeight: 1.2,
-          color: hookTextColor,
-          padding: '0.7cqh 1.4cqh',
-          borderRadius: '0.8cqh',
-          backgroundColor: hookBackgroundColor,
-          boxShadow: '0 0.4cqh 1.4cqh rgba(0,0,0,0.45)',
-          textWrap: 'balance'
-        }}
-      >
-        {clip.hook || clip.title}
-      </span>
-    </div>
-  )
+function HookOverlay({ clip, time, duration, playing }: { clip: Clip; time: number; duration: number; playing: boolean }): React.JSX.Element {
+  const h=hookStyle(clip.edit)
+  return <div className="pointer-events-none absolute text-center" style={{left:h.x*100+'cqw',top:h.y*100+'cqh',transform:'translate(-50%,-50%)',width:'80cqw',opacity:playing?fadeOpacity(time,duration,.2,.3):1}}>
+    <span style={{display:h.preset==='outline'?'block':'inline-block',fontFamily:h.fontFamily,fontWeight:700,fontSize:4.4*h.scale+'cqh',lineHeight:1.2,color:h.color,background:h.preset!=='card'?'transparent':hexToRgba(h.background,.82),padding:h.preset==='plain'?0:'.7cqh 1.4cqh',borderRadius:h.preset==='card'?'.8cqh':0,whiteSpace:'pre-wrap',textShadow:h.preset==='outline'?`2px 2px 0 ${h.background},-2px -2px 0 ${h.background},2px -2px 0 ${h.background},-2px 2px 0 ${h.background}`:'none'}}>{clip.hook || clip.title}</span>
+  </div>
 }
 
 function BrollOverlay({ clip, time }: { clip: Clip; time: number }): React.JSX.Element | null {
@@ -496,8 +486,8 @@ function CaptionOverlay({
 }): React.JSX.Element | null {
   const brandColors = useStore((s) => s.settings?.branding.colors)
   const style = useMemo(
-    () => resolveCaptionStyle(clip.edit.captionStyleId, brandColors, clip.edit.captionFontFamily),
-    [clip.edit.captionStyleId, brandColors, clip.edit.captionFontFamily]
+    () => resolveCaptionStyle(clip.edit.captionStyleId, brandColors, clip.edit.captionFontFamily, clip.edit.captionScale),
+    [clip.edit.captionStyleId, brandColors, clip.edit.captionFontFamily, clip.edit.captionScale]
   )
 
   // Same grouping and line layout the ASS export uses, so what wraps here

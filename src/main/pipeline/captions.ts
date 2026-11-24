@@ -1,3 +1,4 @@
+import { hookStyle } from '@shared/editorEffects'
 import { join } from 'node:path'
 import { app } from 'electron'
 import type { Transcript, BrandColors } from '@shared/types'
@@ -148,10 +149,13 @@ export interface CaptionOptions {
   /** Source-time layout bands that keep captions clear of enlarged detail. */
   positionRanges?: CaptionPositionRange[]
   captionPosition?: { x: number; y: number }
+  hook?: import('@shared/editorEffects').HookStyle
+  hookMetrics?: FontMetrics | null
+  captionScale?: number
 }
 
 export function buildAss(transcript: Transcript, opts: CaptionOptions): string {
-  const style = resolveCaptionStyle(opts.styleId, opts.brandColors, opts.fontFamily)
+  const style = resolveCaptionStyle(opts.styleId, opts.brandColors, opts.fontFamily, opts.captionScale)
   const fontSize = assFontSize(style.fontScale * opts.height, opts.fontMetrics ?? null)
   // Captions are positioned per event with \an5\pos so the block is centred on
   // the style's anchor line exactly as the preview centres it (translateY -50%).
@@ -161,13 +165,11 @@ export function buildAss(transcript: Transcript, opts: CaptionOptions): string {
   const marginH = Math.round(opts.width * (1 - CAPTION_SAFE_WIDTH) / 2)
   const primary = assStyleColor(style.textColor)
   const outline = assStyleColor(style.outlineColor)
-  const brandColors = opts.brandColors
+  const hook = hookStyle({ hookStyle: opts.hook } as import('@shared/types').ClipEditState)
   const hookText = assStyleColor(
-    brandColors?.enabled ? brandColors.hookTextColor : '#FFFFFF'
+    hook.color
   )
-  const titleBox = brandColors?.enabled
-    ? assStyleColorWithAlpha(brandColors.hookBackgroundColor, '40')
-    : '&H40000000'
+  const titleBox = assStyleColorWithAlpha(hook.background, hook.preset === 'plain' ? 'FF' : hook.preset === 'outline' ? '00' : '30')
   /** Soft shadow: black at ~44% opacity. */
   const titleShadowColor = '&H90000000'
 
@@ -176,7 +178,7 @@ export function buildAss(transcript: Transcript, opts: CaptionOptions): string {
   // soft drop shadow (back colour), which reads as a modern hook overlay
   // instead of bare floating text. Sized independently of the caption style so
   // the hook stays prominent and legible whatever caption preset is chosen.
-  const titleFontSize = assFontSize(opts.height * 0.044, opts.fontMetrics ?? null)
+  const titleFontSize = assFontSize(opts.height * 0.044 * hook.scale, opts.hookMetrics ?? opts.fontMetrics ?? null)
   const titleMarginV = Math.round(opts.height * 0.07)
   const titleMarginH = Math.round(opts.width * 0.1)
   const titleBoxPad = Math.max(6, Math.round(opts.height * 0.009))
@@ -193,7 +195,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Caption,${style.fontFamily},${fontSize},${primary},${primary},${outline},&H80000000,${style.bold ? -1 : 0},0,0,0,100,100,0,0,1,${style.outlineWidth},${style.shadow},5,${marginH},${marginH},0,1
-Style: Title,${style.fontFamily},${titleFontSize},${hookText},${hookText},${titleBox},${titleShadowColor},-1,0,0,0,100,100,0,0,3,${titleBoxPad},${titleShadow},8,${titleMarginH},${titleMarginH},${titleMarginV},1
+Style: Title,${hook.fontFamily},${titleFontSize},${hookText},${hookText},${titleBox},${titleShadowColor},-1,0,0,0,100,100,0,0,${hook.preset === 'card' ? 3 : 1},${hook.preset === 'plain' ? 0 : hook.preset === 'outline' ? 2 : titleBoxPad},${hook.preset === 'plain' ? 0 : titleShadow},5,${titleMarginH},${titleMarginH},${titleMarginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -203,9 +205,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   const clipDur = opts.clipEnd - opts.clipStart
 
   if (opts.title && opts.title.trim().length > 0) {
-    const showFor = Math.min(4, clipDur)
+    const showFor = Math.min(hook.duration, clipDur)
     lines.push(
-      `Dialogue: 1,${assTime(0)},${assTime(showFor)},Title,,0,0,0,,{\\fad(200,300)}${escapeAss(opts.title.trim())}`
+      `Dialogue: 1,${assTime(0)},${assTime(showFor)},Title,,0,0,0,,{\\fad(200,300)}${`{\\an5\\pos(${Math.round(hook.x * opts.width)},${Math.round(hook.y * opts.height)})}`}${escapeAss(opts.title.trim())}`
     )
   }
 

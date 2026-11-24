@@ -245,10 +245,12 @@ export function getCaptionStyle(id: string): CaptionStyle {
 export function resolveCaptionStyle(
   id: string,
   brandColors?: BrandColors | null,
-  fontFamily?: string | null
+  fontFamily?: string | null,
+  size = 1
 ): CaptionStyle {
   const preset = getCaptionStyle(id)
   let style: CaptionStyle = fontFamily ? { ...preset, fontFamily } : { ...preset }
+  style.fontScale *= Number.isFinite(size) ? Math.max(.5, Math.min(2, size)) : 1
 
   if (!brandColors?.enabled) return style
 

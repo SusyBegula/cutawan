@@ -1,3 +1,4 @@
+import { bounded, fadeDuration, hookStyle } from '@shared/editorEffects'
 import { writeFile, mkdir, rm, stat, rename } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -16,7 +17,7 @@ import type {
 import type { EncoderPreference } from '@shared/types'
 import { clipKeptSegments, remapTranscript, TimeMap, type KeptSegment } from '@shared/tighten'
 import { focusPanDuration, focusSnaps } from '@shared/focusTrack'
-import { automaticLayoutShots, clipAllowsAutoZoom, compositionHidesTitle, detailCaptionRanges, layoutBlocksAutoZoom } from '@shared/contentType'
+import { automaticLayoutShots, clipAllowsAutoZoom, detailCaptionRanges, layoutBlocksAutoZoom } from '@shared/contentType'
 import { compositionGraph, fitRegionGraph } from './layoutFilters'
 import { resolveCaptionStyle } from '@shared/captionStyles'
 import { computeZoomEvents, fitZoomEvents, remapZoomEvents, type ZoomEvent } from '@shared/zoom'
@@ -564,6 +565,27 @@ export function buildFilterGraph(
     parts.push(`[${current}]setsar=1[vout]`)
   }
 
+  const effects = clip.edit.fades
+  const vin = fadeDuration(effects?.videoIn, clipDuration), vout = fadeDuration(effects?.videoOut, clipDuration)
+  if (vin || vout) {
+    parts[parts.length - 1] = parts[parts.length - 1].replace('[vout]', '[vbase]')
+    const filters = [vin ? 'fade=t=in:st=0:d=' + vin : '', vout ? 'fade=t=out:st=' + (clipDuration-vout) + ':d=' + vout : ''].filter(Boolean)
+    parts.push('[vbase]' + filters.join(',') + '[vout]')
+  }
+  const music = clip.edit.music
+  if (audioLabel && clip.edit.sourceVolume != null) { parts.push('[' + audioLabel + ']volume=' + bounded(clip.edit.sourceVolume, 1, 0, 1) + '[voice]'); audioLabel = 'voice' }
+  if (music?.enabled && music.path) {
+    const input = 1 + items.length + (branding?.enabled && branding.imagePath ? 1 : 0)
+    extraInputs.push('-stream_loop', '-1', '-ss', String(bounded(music.offset, 0, 0, 86400)), '-i', music.path)
+    parts.push('[' + input + ':a]atrim=duration=' + clipDuration + ',asetpts=PTS-STARTPTS,aformat=sample_rates=48000:channel_layouts=stereo,volume=' + bounded(music.volume, .2, 0, 1) + '[music]')
+    if (audioLabel) { parts.push('[' + audioLabel + '][music]amix=inputs=2:duration=longest:normalize=0,alimiter=level=false[mixed]'); audioLabel = 'mixed' }
+    else audioLabel = 'music'
+  }
+  const ain = fadeDuration(effects?.audioIn, clipDuration), aout = fadeDuration(effects?.audioOut, clipDuration)
+  if (audioLabel && (ain || aout)) {
+    const filters = [ain ? 'afade=t=in:st=0:d=' + ain : '', aout ? 'afade=t=out:st=' + (clipDuration-aout) + ':d=' + aout : ''].filter(Boolean)
+    parts.push('[' + audioLabel + ']' + filters.join(',') + '[afinal]'); audioLabel = 'afinal'
+  }
   return {
     filterComplex: parts.join(';'),
     extraInputs,
@@ -671,7 +693,7 @@ async function render(job: RenderJob): Promise<RenderResult> {
   }
 
   let assPath: string | null = null
-  if (clip.edit.captionsEnabled && captionTranscript) {
+  if ((clip.edit.captionsEnabled && captionTranscript) || clip.edit.showTitle) {
     // libass sizes text against the font's win ascent+descent, not the em
     // square the preview uses, so the ASS needs the resolved font's metrics
     // to come out the same size on screen (see assFontSize).
@@ -684,18 +706,22 @@ async function render(job: RenderJob): Promise<RenderResult> {
       job.fontsDirPath ?? fontsDir(),
       captionStyle.fontFamily
     )
-    const ass = buildAss(captionTranscript, {
+    const hook = hookStyle(clip.edit)
+    const ass = buildAss(clip.edit.captionsEnabled && captionTranscript ? captionTranscript : { language: 'und', durationSec: outputDuration, segments: [] }, {
+      hook: clip.edit.hookStyle,
+      hookMetrics: await fontMetricsForFamily(job.fontsDirPath ?? fontsDir(), hook.fontFamily),
       fontMetrics,
       styleId: clip.edit.captionStyleId,
       width: w,
       height: h,
       clipStart: captionStart,
       clipEnd: captionEnd,
-      title: clip.edit.showTitle && !compositionHidesTitle(effectiveClip) ? clip.hook || clip.title : undefined,
+      title: clip.edit.showTitle ? clip.hook || clip.title : undefined,
       fontFamily: clip.edit.captionFontFamily ?? undefined,
       brandColors: job.branding?.colors,
       positionRanges: detailCaptionRanges(effectiveClip),
-      captionPosition: effectiveClip.edit.captionPosition
+      captionPosition: effectiveClip.edit.captionPosition,
+      captionScale: effectiveClip.edit.captionScale
     })
     const dir = join(tmpdir(), 'cutawan')
     await mkdir(dir, { recursive: true })
@@ -894,7 +920,7 @@ async function render(job: RenderJob): Promise<RenderResult> {
   }
   const bytes = (await stat(job.outputPath)).size
   const exported = await probeVideo(job.outputPath)
-  if (exported.width !== (plan?.width ?? w) || exported.height !== (plan?.height ?? h) || exported.hasAudio !== source.hasAudio ||
+  if (exported.width !== (plan?.width ?? w) || exported.height !== (plan?.height ?? h) || exported.hasAudio !== (source.hasAudio || Boolean(clip.edit.music?.enabled && clip.edit.music.path)) ||
     Math.abs(exported.durationSec - outputDuration) > Math.max(.25, 2 / Math.max(1, source.fps))) {
     throw new Error('Export validation failed: unexpected dimensions, duration or audio stream.')
   }

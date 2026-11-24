@@ -23,12 +23,12 @@
  * reserved for primary actions and selection states.
  */
 @theme {
-  --color-surface-950: #0a0a0a;
-  --color-surface-900: #111112;
-  --color-surface-850: #161617;
-  --color-surface-800: #1c1c1e;
-  --color-surface-700: #262629;
-  --color-surface-600: #343438;
+  --color-surface-950: #0b0d13;
+  --color-surface-900: #10131c;
+  --color-surface-850: #171c29;
+  --color-surface-800: #1d2434;
+  --color-surface-700: #283044;
+  --color-surface-600: #354057;
   --color-accent-400: #d4d4d8;
   --color-accent-500: #e4e4e7;
   --color-accent-600: #fafafa;
@@ -131,3 +131,10 @@ input[type='range']::-webkit-slider-thumb {
 .hook-in {
   animation: hookIn 220ms ease-out;
 }
+
+/* Editor chrome stays visually separate from the exported canvas. */
+.editor-stage { background: radial-gradient(ellipse at 50% 30%, #1a2030 0%, #0d1018 70%); }
+.editor-workspace button:focus-visible { outline: 2px solid #818cf8; outline-offset: 3px; }
+.editor-workspace input[type="range"] { accent-color: #818cf8; }
+.editor-workspace aside { box-shadow: 5px 0 20px #00000018; }
+.editor-workspace [role="tabpanel"] > section > h3 { color: #b5bfd3; }
